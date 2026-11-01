@@ -144,3 +144,14 @@ test('independent Node workers load and execute the addon concurrently', async (
   })));
   assert.deepEqual(values,['é!','é!']);
 });
+
+test('stream reentry and invalid asynchronous callback results are rejected', t => {
+  const buffer=PortableBuffer.fromText('é');
+  assert.equal(buffer.copyTo(bytes=>{assert.throws(()=>buffer.close());return bytes.length;}),2n);
+  assert.equal(buffer.closed,false);buffer.close();
+  assert.throws(()=>PortableBuffer.fromReader((()=>Promise.resolve(Buffer.alloc(0))) as unknown as api.StreamReader),e=>diagnostic(e,'execution'));
+  const processor=new Processor();const id=processor.register(new Pipeline().addToEnd('!'));
+  const observers=new Observers();t.after(()=>observers.close());
+  observers.set('async',(()=>Promise.resolve('x')) as unknown as api.Observer);observers.scheduleAll('async');
+  assert.throws(()=>processor.processAllWithWatchers(id,'é',observers,join(directory(t),'report.json')),e=>diagnostic(e,'callback',27));
+});

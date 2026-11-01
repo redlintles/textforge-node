@@ -25,13 +25,14 @@
     "README.md",
     "Changelog.md",
     "LICENSE",
-    "tests/fixtures"
+    "tests/fixtures",
+    "scripts/test.mjs"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "build:native": "napi build --output-dir native --dts native.d.ts",
+    "build:native": "napi build --release --strip --output-dir native --dts native.d.ts",
     "build:ts": "node scripts/prepare-types.mjs && tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/finish-build.mjs",
     "build": "npm run build:native && npm run build:ts",
     "test": "node scripts/test.mjs",

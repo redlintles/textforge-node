@@ -18,10 +18,10 @@ napi-derive = "3"
 napi-build = "2"
 
 [features]
-bytecode = []
-watchers = []
-test_access = []
-test-reference = ["textforge/test_access"]
+bytecode = ["textforge/bytecode"]
+watchers = ["textforge/watchers"]
+test_access = ["textforge/test_access"]
+test-reference = ["test_access"]
 
 [workspace]
 exclude = ["vendor/textforge", "scripts/upstream"]
