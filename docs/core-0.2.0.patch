@@ -1,0 +1,31 @@
+--- a/src/api/portable/instruction.rs
++++ b/src/api/portable/instruction.rs
+@@ -112,10 +112,27 @@
+             }
+         };
+         let mut parameters = Vec::with_capacity(specification.arguments.len());
+-        for argument in &specification.arguments {
++        for (index, argument) in specification.arguments.iter().enumerate() {
+             parameters.push(match argument {
+                 Argument::Text(value) => {
+                     ValType::Literal(TextForgeParamTypes::String(value.clone()))
++                }
++                // Match the public builder's val/var/mut_var conversion exactly:
++                // assignments store numeric literals as decimal text. Keep this
++                // normalization here so every language adapter shares the fix.
++                Argument::Number(value)
++                    if index == 1 && matches!(specification.name.as_str(), "val" | "var" | "mutv") =>
++                {
++                    // Preserve the ordinary portable target-size check before
++                    // adopting the builder's text representation.
++                    let value = usize::try_from(*value).map_err(|_| {
++                        TextForgeError::new(
++                            TextForgeErrorCode::TryIntoFailError("Number exceeds the target's usize range".into()),
++                            specification.name.clone(),
++                            value.to_string(),
++                        )
++                    })?;
++                    ValType::Literal(TextForgeParamTypes::String(value.to_string()))
+                 }
+                 Argument::Number(value) => ValType::Literal(TextForgeParamTypes::Usize(
+                     usize::try_from(*value).map_err(|_| {

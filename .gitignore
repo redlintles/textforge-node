@@ -1,1 +1,10 @@
-/target
+/target/
+/node_modules/
+/native/
+/native.node
+/dist/
+/*.tgz
+/source-dist/
+/vendor/textforge/target/
+/vendor/textforge/Cargo.lock
+/scripts/upstream/target/

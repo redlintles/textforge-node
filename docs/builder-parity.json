@@ -1,0 +1,835 @@
+{
+  "coreVersion": "0.2.0",
+  "apiSha256": "bef96ff7ff03b25b077068f070b4c8d36c77a407a1b3ed658a36c68a9f5dfff4",
+  "registrySha256": "ad1b705b07a1910150104f792fab983865ae6cc871df1efe37b40efb822c7d0a",
+  "methods": [
+    {
+      "rust": "normalize_unicode",
+      "javascript": "normalizeUnicode",
+      "mnemonic": "unorm",
+      "parameters": [
+        [
+          "mode",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "define_replace_map",
+      "javascript": "defineReplaceMap",
+      "mnemonic": "rmapd",
+      "parameters": [
+        [
+          "name",
+          "String"
+        ],
+        [
+          "pattern",
+          "String"
+        ],
+        [
+          "replacement",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "execute_replace_map",
+      "javascript": "executeReplaceMap",
+      "mnemonic": "rmape",
+      "parameters": [
+        [
+          "name",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "append_line",
+      "javascript": "appendLine",
+      "mnemonic": "apl",
+      "parameters": [
+        [
+          "text",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "delete_line",
+      "javascript": "deleteLine",
+      "mnemonic": "dln",
+      "parameters": [
+        [
+          "line",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "delete_lines_after",
+      "javascript": "deleteLinesAfter",
+      "mnemonic": "dlna",
+      "parameters": [
+        [
+          "line",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "delete_lines_before",
+      "javascript": "deleteLinesBefore",
+      "mnemonic": "dlnb",
+      "parameters": [
+        [
+          "line",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "select_lines",
+      "javascript": "selectLines",
+      "mnemonic": "slnc",
+      "parameters": [
+        [
+          "start_line",
+          "Usize"
+        ],
+        [
+          "end_line",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "delete_lines_interval",
+      "javascript": "deleteLinesInterval",
+      "mnemonic": "dlni",
+      "parameters": [
+        [
+          "start_line",
+          "Usize"
+        ],
+        [
+          "end_line",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "insert_line",
+      "javascript": "insertLine",
+      "mnemonic": "inl",
+      "parameters": [
+        [
+          "line",
+          "Usize"
+        ],
+        [
+          "text",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "remove_line_breaks",
+      "javascript": "removeLineBreaks",
+      "mnemonic": "nln",
+      "parameters": []
+    },
+    {
+      "rust": "replace_line",
+      "javascript": "replaceLine",
+      "mnemonic": "rln",
+      "parameters": [
+        [
+          "line",
+          "Usize"
+        ],
+        [
+          "text",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "prepend_line",
+      "javascript": "prependLine",
+      "mnemonic": "pln",
+      "parameters": [
+        [
+          "text",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "delete_empty_lines",
+      "javascript": "deleteEmptyLines",
+      "mnemonic": "dle",
+      "parameters": []
+    },
+    {
+      "rust": "keep_lines_matching",
+      "javascript": "keepLinesMatching",
+      "mnemonic": "klm",
+      "parameters": [
+        [
+          "pattern",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "delete_lines_matching",
+      "javascript": "deleteLinesMatching",
+      "mnemonic": "dlm",
+      "parameters": [
+        [
+          "pattern",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "reverse_lines",
+      "javascript": "reverseLines",
+      "mnemonic": "revln",
+      "parameters": []
+    },
+    {
+      "rust": "unique_lines",
+      "javascript": "uniqueLines",
+      "mnemonic": "uniqln",
+      "parameters": []
+    },
+    {
+      "rust": "join_lines",
+      "javascript": "joinLines",
+      "mnemonic": "joinln",
+      "parameters": [
+        [
+          "separator",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "trim_both_sides",
+      "javascript": "trimBothSides",
+      "mnemonic": "tbs",
+      "parameters": []
+    },
+    {
+      "rust": "trim_left_side",
+      "javascript": "trimLeftSide",
+      "mnemonic": "tls",
+      "parameters": []
+    },
+    {
+      "rust": "trim_right_side",
+      "javascript": "trimRightSide",
+      "mnemonic": "trs",
+      "parameters": []
+    },
+    {
+      "rust": "add_to_end",
+      "javascript": "addToEnd",
+      "mnemonic": "ate",
+      "parameters": [
+        [
+          "text",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "add_to_beginning",
+      "javascript": "addToBeginning",
+      "mnemonic": "atb",
+      "parameters": [
+        [
+          "text",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "delete_first",
+      "javascript": "deleteFirst",
+      "mnemonic": "dlf",
+      "parameters": []
+    },
+    {
+      "rust": "delete_last",
+      "javascript": "deleteLast",
+      "mnemonic": "dll",
+      "parameters": []
+    },
+    {
+      "rust": "delete_after",
+      "javascript": "deleteAfter",
+      "mnemonic": "dla",
+      "parameters": [
+        [
+          "index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "delete_before",
+      "javascript": "deleteBefore",
+      "mnemonic": "dlb",
+      "parameters": [
+        [
+          "index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "delete_chunk",
+      "javascript": "deleteChunk",
+      "mnemonic": "dlc",
+      "parameters": [
+        [
+          "start_index",
+          "Usize"
+        ],
+        [
+          "end_index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "replace_all_with",
+      "javascript": "replaceAllWith",
+      "mnemonic": "raw",
+      "parameters": [
+        [
+          "pattern",
+          "String"
+        ],
+        [
+          "text_to_replace",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "replace_first_with",
+      "javascript": "replaceFirstWith",
+      "mnemonic": "rfw",
+      "parameters": [
+        [
+          "pattern",
+          "String"
+        ],
+        [
+          "text_to_replace",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "replace_last_with",
+      "javascript": "replaceLastWith",
+      "mnemonic": "rlw",
+      "parameters": [
+        [
+          "pattern",
+          "String"
+        ],
+        [
+          "text_to_replace",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "replace_nth_with",
+      "javascript": "replaceNthWith",
+      "mnemonic": "rnw",
+      "parameters": [
+        [
+          "pattern",
+          "String"
+        ],
+        [
+          "text_to_replace",
+          "String"
+        ],
+        [
+          "index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "replace_count_with",
+      "javascript": "replaceCountWith",
+      "mnemonic": "rcw",
+      "parameters": [
+        [
+          "pattern",
+          "String"
+        ],
+        [
+          "text_to_replace",
+          "String"
+        ],
+        [
+          "count",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "rotate_left",
+      "javascript": "rotateLeft",
+      "mnemonic": "rtl",
+      "parameters": [
+        [
+          "times",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "rotate_right",
+      "javascript": "rotateRight",
+      "mnemonic": "rtr",
+      "parameters": [
+        [
+          "times",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "repeat",
+      "javascript": "repeat",
+      "mnemonic": "rpt",
+      "parameters": [
+        [
+          "times",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "select",
+      "javascript": "select",
+      "mnemonic": "slt",
+      "parameters": [
+        [
+          "start_index",
+          "Usize"
+        ],
+        [
+          "end_index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "to_uppercase_all",
+      "javascript": "toUppercaseAll",
+      "mnemonic": "tua",
+      "parameters": []
+    },
+    {
+      "rust": "to_lowercase_all",
+      "javascript": "toLowercaseAll",
+      "mnemonic": "tla",
+      "parameters": []
+    },
+    {
+      "rust": "to_uppercase_single",
+      "javascript": "toUppercaseSingle",
+      "mnemonic": "tucs",
+      "parameters": [
+        [
+          "index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "to_lowercase_single",
+      "javascript": "toLowercaseSingle",
+      "mnemonic": "tlcs",
+      "parameters": [
+        [
+          "index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "to_uppercase_chunk",
+      "javascript": "toUppercaseChunk",
+      "mnemonic": "tucc",
+      "parameters": [
+        [
+          "start_index",
+          "Usize"
+        ],
+        [
+          "end_index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "to_lowercase_chunk",
+      "javascript": "toLowercaseChunk",
+      "mnemonic": "tlcc",
+      "parameters": [
+        [
+          "start_index",
+          "Usize"
+        ],
+        [
+          "end_index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "capitalize_first_word",
+      "javascript": "capitalizeFirstWord",
+      "mnemonic": "cfw",
+      "parameters": []
+    },
+    {
+      "rust": "capitalize_last_word",
+      "javascript": "capitalizeLastWord",
+      "mnemonic": "clw",
+      "parameters": []
+    },
+    {
+      "rust": "split_select",
+      "javascript": "splitSelect",
+      "mnemonic": "sslt",
+      "parameters": [
+        [
+          "pattern",
+          "String"
+        ],
+        [
+          "index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "capitalize_chunk",
+      "javascript": "capitalizeChunk",
+      "mnemonic": "ctc",
+      "parameters": [
+        [
+          "start_index",
+          "Usize"
+        ],
+        [
+          "end_index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "capitalize_range",
+      "javascript": "capitalizeRange",
+      "mnemonic": "ctr",
+      "parameters": [
+        [
+          "start_index",
+          "Usize"
+        ],
+        [
+          "end_index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "capitalize_single_word",
+      "javascript": "capitalizeSingleWord",
+      "mnemonic": "cts",
+      "parameters": [
+        [
+          "index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "to_url_encoded",
+      "javascript": "toUrlEncoded",
+      "mnemonic": "urle",
+      "parameters": []
+    },
+    {
+      "rust": "to_url_decoded",
+      "javascript": "toUrlDecoded",
+      "mnemonic": "urld",
+      "parameters": []
+    },
+    {
+      "rust": "to_reverse",
+      "javascript": "toReverse",
+      "mnemonic": "rev",
+      "parameters": []
+    },
+    {
+      "rust": "split_characters",
+      "javascript": "splitCharacters",
+      "mnemonic": "splc",
+      "parameters": []
+    },
+    {
+      "rust": "to_html_escaped",
+      "javascript": "toHtmlEscaped",
+      "mnemonic": "htmle",
+      "parameters": []
+    },
+    {
+      "rust": "to_html_unescaped",
+      "javascript": "toHtmlUnescaped",
+      "mnemonic": "htmlu",
+      "parameters": []
+    },
+    {
+      "rust": "to_json_escaped",
+      "javascript": "toJsonEscaped",
+      "mnemonic": "jsone",
+      "parameters": []
+    },
+    {
+      "rust": "to_json_unescaped",
+      "javascript": "toJsonUnescaped",
+      "mnemonic": "jsonu",
+      "parameters": []
+    },
+    {
+      "rust": "insert",
+      "javascript": "insert",
+      "mnemonic": "ins",
+      "parameters": [
+        [
+          "index",
+          "Usize"
+        ],
+        [
+          "text_to_insert",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "to_lowercase_word",
+      "javascript": "toLowercaseWord",
+      "mnemonic": "tlcw",
+      "parameters": [
+        [
+          "index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "to_uppercase_word",
+      "javascript": "toUppercaseWord",
+      "mnemonic": "tucw",
+      "parameters": [
+        [
+          "index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "join_to_kebab_case",
+      "javascript": "joinToKebabCase",
+      "mnemonic": "jkbc",
+      "parameters": []
+    },
+    {
+      "rust": "join_to_snake_case",
+      "javascript": "joinToSnakeCase",
+      "mnemonic": "jsnc",
+      "parameters": []
+    },
+    {
+      "rust": "join_to_camel_case",
+      "javascript": "joinToCamelCase",
+      "mnemonic": "jcmc",
+      "parameters": []
+    },
+    {
+      "rust": "join_to_pascal_case",
+      "javascript": "joinToPascalCase",
+      "mnemonic": "jpsc",
+      "parameters": []
+    },
+    {
+      "rust": "pad_left",
+      "javascript": "padLeft",
+      "mnemonic": "padl",
+      "parameters": [
+        [
+          "text",
+          "String"
+        ],
+        [
+          "times",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "pad_right",
+      "javascript": "padRight",
+      "mnemonic": "padr",
+      "parameters": [
+        [
+          "text",
+          "String"
+        ],
+        [
+          "times",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "remove_whitespace",
+      "javascript": "removeWhitespace",
+      "mnemonic": "rmws",
+      "parameters": []
+    },
+    {
+      "rust": "delete_single",
+      "javascript": "deleteSingle",
+      "mnemonic": "dls",
+      "parameters": [
+        [
+          "index",
+          "Usize"
+        ]
+      ]
+    },
+    {
+      "rust": "extract_matches_joined",
+      "javascript": "extractMatchesJoined",
+      "mnemonic": "emj",
+      "parameters": [
+        [
+          "pattern",
+          "String"
+        ],
+        [
+          "separator",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "val",
+      "javascript": "val",
+      "mnemonic": "val",
+      "parameters": [
+        [
+          "var_name",
+          "String"
+        ],
+        [
+          "var_value",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "var",
+      "javascript": "var",
+      "mnemonic": "var",
+      "parameters": [
+        [
+          "var_name",
+          "String"
+        ],
+        [
+          "var_value",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "mut_var",
+      "javascript": "mutVar",
+      "mnemonic": "mutv",
+      "parameters": [
+        [
+          "var_name",
+          "String"
+        ],
+        [
+          "var_value",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "eval",
+      "javascript": "eval",
+      "mnemonic": "eval",
+      "parameters": [
+        [
+          "expr",
+          "String"
+        ],
+        [
+          "var_name",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "iter",
+      "javascript": "iter",
+      "mnemonic": "iter",
+      "parameters": [
+        [
+          "times",
+          "Usize"
+        ],
+        [
+          "inner",
+          "Token"
+        ]
+      ]
+    },
+    {
+      "rust": "remove_pattern",
+      "javascript": "removePattern",
+      "mnemonic": "rmp",
+      "parameters": [
+        [
+          "pattern",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "end",
+      "javascript": "end",
+      "mnemonic": "end",
+      "parameters": []
+    }
+  ]
+}

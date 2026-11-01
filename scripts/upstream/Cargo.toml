@@ -1,0 +1,14 @@
+[package]
+name = "textforge-node-upstream-reference"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+textforge = { version = "=0.2.0", features = ["test_access"] }
+
+[[example]]
+name = "builder_reference"
+path = "../../examples/builder_reference.rs"
+
+[workspace]

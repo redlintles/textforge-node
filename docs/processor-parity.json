@@ -1,0 +1,130 @@
+{
+  "coreVersion": "0.2.0",
+  "methods": [
+    {
+      "rust": "add_transform",
+      "portable": "PortableProcessor::add_transform",
+      "javascript": "addTransform"
+    },
+    {
+      "rust": "create_pipeline",
+      "portable": "PortableProcessor::create_pipeline / register",
+      "javascript": "createPipeline"
+    },
+    {
+      "rust": "get_pipeline_from_file",
+      "portable": "PortableProcessor::get_pipeline_from_file",
+      "javascript": "getPipelineFromFile"
+    },
+    {
+      "rust": "get_text_transform_vec",
+      "portable": "PortableProcessor::get_text_transform_vec",
+      "javascript": "getTextTransformVec"
+    },
+    {
+      "rust": "get_transform_vec",
+      "portable": "PortableProcessor::get_transform_vec",
+      "javascript": "getTransformVec"
+    },
+    {
+      "rust": "new",
+      "portable": "PortableProcessor::new",
+      "javascript": "constructor"
+    },
+    {
+      "rust": "process_all",
+      "portable": "PortableProcessor::process_all",
+      "javascript": "processAll"
+    },
+    {
+      "rust": "process_all_buffered",
+      "portable": "PortableProcessor::process_all_buffered",
+      "javascript": "processAllBuffered"
+    },
+    {
+      "rust": "process_all_with_debug",
+      "portable": "PortableProcessor::process_all_with_debug",
+      "javascript": "processAllWithDebug"
+    },
+    {
+      "rust": "process_all_with_watchers",
+      "portable": "PortableProcessor::process_all_with_watchers",
+      "javascript": "processAllWithWatchers"
+    },
+    {
+      "rust": "process_batch",
+      "portable": "PortableProcessor::process_batch",
+      "javascript": "processBatch"
+    },
+    {
+      "rust": "process_batch_buffered",
+      "portable": "PortableProcessor::process_batch_buffered",
+      "javascript": "processBatchBuffered"
+    },
+    {
+      "rust": "process_batch_in_pool",
+      "portable": "PortableProcessor::process_batch_in_pool",
+      "javascript": "processBatchInPool"
+    },
+    {
+      "rust": "process_file",
+      "portable": "PortableProcessor::process_file",
+      "javascript": "processFile"
+    },
+    {
+      "rust": "process_file_buffered",
+      "portable": "PortableProcessor::process_file_buffered",
+      "javascript": "processFileBuffered"
+    },
+    {
+      "rust": "process_single",
+      "portable": "PortableProcessor::process_single",
+      "javascript": "processSingle"
+    },
+    {
+      "rust": "process_single_buffered",
+      "portable": "PortableProcessor::process_single_buffered",
+      "javascript": "processSingleBuffered"
+    },
+    {
+      "rust": "process_single_with_debug",
+      "portable": "PortableProcessor::process_single_with_debug",
+      "javascript": "processSingleWithDebug"
+    },
+    {
+      "rust": "read_from_bytecode_file",
+      "portable": "PortableProcessor::read_from_bytecode_file",
+      "javascript": "readFromBytecodeFile"
+    },
+    {
+      "rust": "remove_transform",
+      "portable": "PortableProcessor::remove_transform",
+      "javascript": "removeTransform"
+    },
+    {
+      "rust": "run_transform",
+      "portable": "PortableProcessor::run_transform",
+      "javascript": "runTransform"
+    },
+    {
+      "rust": "show_transforms",
+      "portable": "PortableProcessor::show_transforms",
+      "javascript": "showTransforms"
+    },
+    {
+      "rust": "transform_exists",
+      "portable": "PortableProcessor::transform_exists",
+      "javascript": "transformExists"
+    },
+    {
+      "rust": "write_pipeline_to_file",
+      "portable": "PortableProcessor::write_pipeline_to_file",
+      "javascript": "writePipelineToFile"
+    },
+    {
+      "rust": "write_to_bytecode_file",
+      "portable": "PortableProcessor::write_to_bytecode_file",
+      "javascript": "writeToBytecodeFile"
+    }
+  ]
+}

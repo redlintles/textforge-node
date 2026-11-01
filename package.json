@@ -1,0 +1,51 @@
+{
+  "name": "textforge-node",
+  "version": "0.1.0",
+  "description": "Typed Node.js N-API bindings for TextForge 0.2.0",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "native.node",
+    "README.md",
+    "Changelog.md",
+    "LICENSE",
+    "tests/fixtures"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:native": "napi build --output-dir native --dts native.d.ts",
+    "build:ts": "node scripts/prepare-types.mjs && tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/finish-build.mjs",
+    "build": "npm run build:native && npm run build:ts",
+    "test": "node scripts/test.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check:generated": "python3 scripts/generate-builder.py --check",
+    "check:reference": "python3 scripts/generate-reference.py --check",
+    "test:distribution": "node scripts/check-distribution.mjs"
+  },
+  "napi": {
+    "binaryName": "textforge_node"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3",
+    "@types/node": "^22",
+    "typescript": "^5.9"
+  }
+}
