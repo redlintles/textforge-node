@@ -3,7 +3,7 @@
 | Component | Supported baseline | Evidence |
 | --- | --- | --- |
 | Binding | 0.1.0 | Local build and tests |
-| Core | Published 0.2.0, revision c2ed4b8f4c96c9e3ddc53576a3cdbf6ccd38bc9e, approved portable numeric-assignment patch | Hash manifest, patch and independent public-Rust oracles |
+| Core | Published 0.2.0, revision c2ed4b8f4c96c9e3ddc53576a3cdbf6ccd38bc9e, documented numeric and persistence corrections | Hash manifest, patch and independent public-Rust oracles |
 | Node.js | 22 and 24 | CI matrix; local execution on 24.14.1 |
 | N-API | Version 8 | Addon build configuration |
 | Rust | Stable, edition 2024; dependencies locked | CI stable; local 1.99.1; no lower MSRV claim |
@@ -20,17 +20,21 @@ No browser or asynchronous Node stream protocol is exposed. Synchronous stream
 hooks cover the portable stream surface. No core functionality is intentionally
 omitted; internal Rust trait objects are represented by owned descriptions.
 
-`npm run build` creates a binary for the current platform. Native addons cannot
+`npm run build` creates a binary for the current platform. `npm pack` builds it
+and the TypeScript outputs automatically via `prepack`. Native addons cannot
 be reused across operating systems, architectures or incompatible libc variants.
-`npm run test:distribution` creates a platform-restricted tarball in a temporary
-staging directory, installs it in a clean consumer, runs the Node suites there,
-and checks both `.mts` and `.cts` consumers. Tarball platform metadata includes
-OS/CPU and Linux glibc. Installed packages have no native download/install hook.
+`npm run test:distribution` runs the real `npm pack` command with lifecycle hooks,
+installs that exact tarball in a clean consumer directory containing spaces, runs
+the Node suites and actual package-name imports/requires there, and checks both
+`.mts` and `.cts` consumers. Runtime tests exchange plans and compiled objects
+between module formats and export/import files into previously missing directories.
+Installed packages have no native download/install hook.
 
 `node scripts/check-distribution.mjs --source` first creates and extracts a source
-archive outside this checkout, runs `npm ci` and a full native/TypeScript build
-there, and validates the resulting installed package. The source includes Rust,
-TypeScript, the bundled core, lockfiles, tests, declarations and maintenance tools.
+archive outside this checkout, runs `npm ci` and `npm pack`
+there (which must build the missing outputs), and validates the resulting installed
+package. The source includes Rust, TypeScript, the bundled core, lockfiles, tests,
+declarations and maintenance tools.
 There is no dependency on the neighboring TextForge or Python repositories.
 
 CI runs the installed-package checks on every configured OS/Node combination;

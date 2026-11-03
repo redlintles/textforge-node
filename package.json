@@ -26,7 +26,8 @@
     "Changelog.md",
     "LICENSE",
     "tests/fixtures",
-    "scripts/test.mjs"
+    "scripts/test.mjs",
+    "docs"
   ],
   "engines": {
     "node": ">=22"
@@ -39,7 +40,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check:generated": "python3 scripts/generate-builder.py --check",
     "check:reference": "python3 scripts/generate-reference.py --check",
-    "test:distribution": "node scripts/check-distribution.mjs"
+    "test:distribution": "node scripts/check-distribution.mjs",
+    "prepack": "npm run build"
   },
   "napi": {
     "binaryName": "textforge_node"

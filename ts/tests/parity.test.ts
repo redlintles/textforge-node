@@ -92,3 +92,25 @@ test('native Rust processor results and complete portable diagnostics', t => {
     });
   }
 });
+
+test('every native builder reference survives text and bytecode export/import',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'textforge-persistence-parity-'));
+  t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const processor=new Processor();
+  for(const fixture of fixtures){
+    if(!('ok' in fixture.result))continue;
+    const id=processor.register(chain(fixture.steps));
+    for(const extension of ['tft','tfb']){
+      const path=join(dir,fixture.name,`pipeline.${extension}`);
+      let restored:string;
+      if(extension==='tft'){
+        processor.writePipelineToFile(id,path);restored=processor.getPipelineFromFile(path);
+      }else{
+        processor.writeToBytecodeFile(id,path);restored=processor.readFromBytecodeFile(path);
+      }
+      assert.equal(processor.processAll(restored,fixture.input),fixture.result.ok,`${fixture.name} ${extension}`);
+      processor.removeTransform(restored);
+    }
+    processor.removeTransform(id);
+  }
+});

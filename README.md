@@ -2,12 +2,13 @@
 
 Typed Node.js bindings for the TextForge text-transformation DSL. Binding version
 **0.1.0** is based on the published **TextForge 0.2.0** core, using N-API through
-`napi-rs`. Both ESM and CommonJS expose the same camelCase API.
+`napi-rs`. Both ESM and CommonJS expose the same camelCase API and share class identities, so
+objects can cross module formats.
 
 All engine operations go through `textforge::api::portable`. The Rust addon is an
 adapter; TypeScript provides the immutable fluent builder, public types and docs.
-The bundled core includes one approved compatibility fix for numeric variable
-assignments. See [core provenance](docs/core.md) and the reviewable
+The bundled core includes documented corrections for numeric assignments,
+persistence, output paths and registry-consistent bytecode opcodes. See [core provenance](docs/core.md) and the reviewable
 [patch](docs/core-0.2.0.patch).
 
 ## Build and try
@@ -23,6 +24,17 @@ npm run build
 npm test
 ```
 
+To create the installable package from source:
+
+```sh
+npm ci
+npm pack
+```
+
+`npm pack` runs the release/native and TypeScript builds automatically through
+`prepack`. Install the resulting `.tgz`, which includes `dist/` and `native.node`.
+Consumers of that tarball do not need Rust or TypeScript build tools.
+
 ESM:
 
 ```ts
@@ -37,6 +49,11 @@ console.log(pipeline.compile().process(' é ')); // 🍌 é!
 const processor = new Processor();
 const id = processor.createPipeline().val('n', 2).repeat(getVar('n')).build();
 console.log(processor.processAll(id, 'é')); // éé
+
+// External plans and compiled pipelines can both be attached to a processor.
+const externalId = processor.addTransform(pipeline.compile());
+processor.writePipelineToFile(externalId, 'pipelines/example.tft');
+processor.writeToBytecodeFile(externalId, 'pipelines/example.tfb');
 ```
 
 CommonJS:

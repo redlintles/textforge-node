@@ -32,6 +32,13 @@ Invalid arity, types, ancestry and runtime variables remain core responsibilitie
 ## Processor
 
 `new Processor()` exposes the methods in [the parity matrix](parity.md).
+Both `register(source)` and `addTransform(source)` accept a `Pipeline`, a
+`CompiledPipeline`, or a readonly array of `Instruction` objects, and return a
+fresh registered ID. Registration preserves the source for reuse; compiled
+pipelines retain a detached immutable source snapshot for this purpose. Passing
+an ID returned by `build()` is unnecessary: that ID already identifies a registered
+pipeline. Unsupported input shapes raise a descriptive `TypeError` before native
+conversion. ESM and CommonJS use the same classes and may exchange these objects.
 `createPipeline()` binds a new plan to this processor. Registering, cloning or
 importing returns an owned ID. `getTransformVec` returns independent descriptions
 which may be edited by constructing new instructions and re-registered through
@@ -39,10 +46,15 @@ which may be edited by constructing new instructions and re-registered through
 `removeTransform` removes only the registered snapshot. Compiled executables and
 source plans remain independent.
 
-Text exports retain the 0.2.0 core's requirement for an **existing destination
-with `.textforge` extension**. Bytecode imports require `.textforgebc`. Bytecode
-exports accept the core's recognized pipeline extensions. Import/export behavior
-is not rewritten by the adapter. `processFile` writes transformed UTF-8 text.
+Pipeline exports create the destination and any missing parent directories.
+Text paths accept `.textforge` or `.tft`; bytecode imports accept `.textforgebc`
+or `.tfb`. Bytecode exports retain acceptance of the core's recognized pipeline
+extensions; use `.tfb` for clarity. Text serialization quotes whitespace, empty
+arguments, quotes and backslashes, including nested instructions. Literal line
+breaks and variable names outside the textual reference grammar require bytecode
+export, which preserves them losslessly. These text limitations are reported
+before a destination is created or an existing file is truncated. `processFile`
+writes transformed UTF-8 text.
 Debug methods and `showTransforms` print to native stdout.
 
 `FileTask` is `{input, pipelineId, output}`. `processBatch(tasks)` and
@@ -53,7 +65,7 @@ Success is `null`; tasks may use different IDs. Use distinct output paths.
 
 ## Paths
 
-`Path` accepts a string, `FilePath` or Unix `Uint8Array`/`Buffer`.
+`Path` accepts a string, file `URL`, `FilePath` or Unix `Uint8Array`/`Buffer`.
 `FilePath.fromText`, `fromNativeBytes`, `fromWindowsWide`, `toText`,
 `toNativeBytes`, `toWindowsWide` mirror the portable API. `toText()` is `null`
 when a native name has no exact Unicode representation. Raw Windows wide paths
@@ -65,7 +77,8 @@ Ordinary strings must be well-formed Unicode.
 `new Observers()` owns registrations and their callback references. `set(name,fn)`
 replaces a custom callback, and `setBuiltin(name,metric)` uses a built-in metric;
 `Observers.builtinNames()` lists all core metrics. `scheduleAll(name)`, `reset()`,
-`run(observation)` and `writeReport(path)` mirror the portable methods.
+`run(observation)` and `writeReport(path)` mirror the portable methods. Report
+exports create missing parent directories.
 
 `Observation` contains `current`, `before`, optional `after`, and `instruction`.
 The observation object passed to a callback is a frozen owned snapshot. Callbacks
@@ -84,7 +97,9 @@ persistent native callback references cannot be discovered as JavaScript cycles.
 ## Buffered documents and synchronous streams
 
 `new BufferOptions(memoryThreshold=8388608, spillDirectory=os.tmpdir())` selects
-spooling placement, not a global memory cap. Some core transforms materialize.
+spooling placement, not a global memory cap. The spill directory is created when
+those options are used to construct or process a buffer. Some core transforms
+materialize.
 `PortableBuffer.fromText`, `fromFile` and `fromReader` construct owned UTF-8
 buffers. `lenBytes`, `isEmpty`, `isSpilled`, `spill`, `readAt(offset,maximum)`,
 `copyTo(writer)`, `writeToFile(path)`, `intoString`, `close`, and `closed` expose
@@ -104,7 +119,8 @@ consume input **including failure paths**. `intoString()` also consumes. Further
 access raises an error. `processFileBuffered(id,path,options?)` creates an owned
 result; `processBatchBuffered([{pipelineId,input}],options?)` returns an ordered
 array of `PortableBuffer | TextForgeError`. Close results you do not consume.
-`close()` is idempotent and releases spill files immediately. GC also drops Rust
+`writeToFile(path)` creates missing parent directories. `close()` is idempotent
+and releases spill files immediately. GC also drops Rust
 resources, but its timing is unspecified.
 
 ## Runtime and errors

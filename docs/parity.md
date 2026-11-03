@@ -16,7 +16,7 @@ stale signatures. New methods fail CI until mapping and fixtures are updated.
 | `get_var` | `getVar`, `Variable` |
 | `block_assoc`, `call_block` | `blockAssoc`, `callBlock`; owned subplans |
 | `if_do_contains_each` | `ifDoContainsEach`; owned conditional subplan |
-| `add_transform`, registration | `addTransform`, `register` |
+| `add_transform`, registration | `addTransform`, `register` (plans, compiled pipelines or instruction arrays) |
 | Removal/existence/listing | `removeTransform`, `transformExists`, `showTransforms`, `listTransforms` |
 | Token/text snapshots and cloning | `getTransformVec`, `getTextTransformVec`, `clonePipeline` |
 | Text and bytecode persistence | `getPipelineFromFile`, `writePipelineToFile`, `readFromBytecodeFile`, `writeToBytecodeFile` |
@@ -37,6 +37,7 @@ covering every fluent method plus blocks and conditionals. The processor oracle
 records 41 results/complete errors from native public methods and portable-only
 operations, including line errors, persistence, watchers and buffered execution.
 Node compares raw stage, code, message, instruction and input, not display strings.
+All 80 builder cases additionally round-trip through text and bytecode files.
 Separate tests cover native paths, short reads/writes, callback failures, cleanup,
 consuming failures, reentry and worker isolation. Installed packages run the same
 Node suites with their pinned fixtures. Rust regression tests cover the approved
@@ -44,5 +45,5 @@ portable numeric-assignment correction.
 
 There are no intentionally omitted methods in these public builder/processor
 surfaces. The core's own constraints remain visible, including synchronous stream
-hooks, implemented watcher scheduling windows, exact file-extension checks and
+hooks, implemented watcher scheduling windows, canonical file formats and
 experimental buffering semantics. These are described in [the API guide](api.md).

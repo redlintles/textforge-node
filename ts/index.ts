@@ -1,6 +1,7 @@
 /** Typed, owned Node.js interface to TextForge 0.2.0. */
 import native from './loader.cjs';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 export type Integer = number | bigint;
 /** Convert without truncation or implicit numeric coercion. */
@@ -161,9 +162,14 @@ export class Pipeline {
     }
     return plan;
   }
-  compile(): CompiledPipeline { return new CompiledPipeline(this.lower().compile()); }
+  private detached(): Pipeline {
+    return Pipeline.create(this.#nodes.map(node => node instanceof Instruction
+      ? node
+      : Object.freeze({...node, body:node.body.detached()})));
+  }
+  compile(): CompiledPipeline { return new CompiledPipeline(this.lower().compile(), this.detached()); }
   build(processor: Processor | undefined = this.#processor): string {
-    if (!processor) throw new TypeError('build requires a Processor');
+    if (!(processor instanceof Processor)) throw new TypeError('build requires a Processor; pass one or use processor.createPipeline()');
     return processor.register(this);
   }
   // BEGIN GENERATED BUILDER METHODS
@@ -326,7 +332,12 @@ export class Pipeline {
 /** Reusable immutable executable; each process call creates a fresh engine context. */
 export class CompiledPipeline {
   /** @internal */
-  constructor(private readonly inner: InstanceType<typeof native.CompiledPipeline>) {}
+  constructor(
+    private readonly inner: InstanceType<typeof native.CompiledPipeline>,
+    private readonly source: Pipeline,
+  ) {}
+  /** @internal Register a fresh snapshot without consuming this executable. */
+  lower(): InstanceType<typeof native.Plan> { return this.source.lower(); }
   process(input: string): string { return this.inner.process(text(input)); }
 }
 /** Lossless OS path. Unix bytes and Windows wide paths use the portable constructors. */
@@ -334,15 +345,22 @@ export class FilePath {
   /** @internal */
   constructor(readonly inner: InstanceType<typeof native.FilePath>) {}
   static fromText(value: string): FilePath { return new FilePath(native.FilePath.fromText(text(value))); }
-  static fromNativeBytes(value: Uint8Array): FilePath { return new FilePath(native.FilePath.fromNativeBytes(Buffer.from(value))); }
-  static fromWindowsWide(value: Uint16Array): FilePath { return new FilePath(native.FilePath.fromWindowsWide(value)); }
+  static fromNativeBytes(value: Uint8Array): FilePath {
+    if (!(value instanceof Uint8Array)) throw new TypeError('FilePath.fromNativeBytes requires Uint8Array or Buffer');
+    return new FilePath(native.FilePath.fromNativeBytes(Buffer.from(value)));
+  }
+  static fromWindowsWide(value: Uint16Array): FilePath {
+    if (!(value instanceof Uint16Array)) throw new TypeError('FilePath.fromWindowsWide requires Uint16Array');
+    return new FilePath(native.FilePath.fromWindowsWide(value));
+  }
   toText(): string | null { return this.inner.toText() ?? null; }
   toNativeBytes(): Buffer { return this.inner.toNativeBytes(); }
   toWindowsWide(): Uint16Array { return this.inner.toWindowsWide(); }
 }
-export type Path = string | FilePath | Uint8Array;
+export type Path = string | FilePath | Uint8Array | URL;
 function path(value: Path): FilePath {
   if (value instanceof FilePath) return value;
+  if (value instanceof URL) return FilePath.fromText(fileURLToPath(value));
   if (value instanceof Uint8Array) return FilePath.fromNativeBytes(value);
   return FilePath.fromText(value);
 }
@@ -359,6 +377,10 @@ export class BufferOptions {
     this.inner = new native.BufferOptions(this.memoryThreshold,this.spillDirectory.inner);
   }
 }
+function bufferOptions(value: BufferOptions): InstanceType<typeof native.BufferOptions> {
+  if (!(value instanceof BufferOptions)) throw new TypeError('expected BufferOptions');
+  return value.inner;
+}
 /** Synchronous byte reader. Empty data marks EOF; maximum must be respected. */
 export type StreamReader = (maximum: bigint) => Uint8Array;
 /** Synchronous writer. Return the accepted byte count; partial writes are retried. */
@@ -368,24 +390,28 @@ export class PortableBuffer {
   /** @internal */
   constructor(readonly inner: InstanceType<typeof native.PortableBuffer>) {}
   static fromText(value: string, options = new BufferOptions()): PortableBuffer {
-    return new PortableBuffer(native.PortableBuffer.fromText(text(value),options.inner));
+    return new PortableBuffer(native.PortableBuffer.fromText(text(value),bufferOptions(options)));
   }
   static fromFile(value: Path, options = new BufferOptions()): PortableBuffer {
-    return new PortableBuffer(native.PortableBuffer.fromFile(path(value).inner,options.inner));
+    return new PortableBuffer(native.PortableBuffer.fromFile(path(value).inner,bufferOptions(options)));
   }
   static fromReader(reader: StreamReader, options = new BufferOptions()): PortableBuffer {
+    if (typeof reader !== 'function') throw new TypeError('PortableBuffer.fromReader requires a synchronous reader callback');
     return new PortableBuffer(native.PortableBuffer.fromReader(max => {
       const result = reader(max);
       if (!(result instanceof Uint8Array)) throw new TypeError('reader must return Uint8Array synchronously');
       return Buffer.from(result);
-    },options.inner));
+    },bufferOptions(options)));
   }
   lenBytes(): bigint { return this.inner.lenBytes(); }
   isEmpty(): boolean { return this.inner.isEmpty(); }
   isSpilled(): boolean { return this.inner.isSpilled(); }
   spill(): void { this.inner.spill(); }
   readAt(offset: Integer, maximum: Integer): Buffer { return this.inner.readAt(integer(offset),integer(maximum)); }
-  copyTo(writer: StreamWriter): bigint { return this.inner.copyTo(bytes => integer(writer(bytes))); }
+  copyTo(writer: StreamWriter): bigint {
+    if (typeof writer !== 'function') throw new TypeError('PortableBuffer.copyTo requires a synchronous writer callback');
+    return this.inner.copyTo(bytes => integer(writer(bytes)));
+  }
   writeToFile(value: Path): bigint { return this.inner.writeToFile(path(value).inner); }
   intoString(): string { return this.inner.intoString(); }
   close(): void { this.inner.close(); }
@@ -398,6 +424,7 @@ export class Observers {
   /** @internal */
   readonly inner = new native.Observers();
   set(name: string, callback: Observer): void {
+    if (typeof callback !== 'function') throw new TypeError('Observers.set requires a synchronous observer callback');
     this.inner.set(text(name), value => text(callback(Object.freeze({...value}))));
   }
   setBuiltin(name: string, metric: string): void { this.inner.setBuiltin(text(name),text(metric)); }
@@ -407,6 +434,7 @@ export class Observers {
   close(): void { this.inner.close(); }
   get closed(): boolean { return this.inner.closed; }
   run(value: Observation): void {
+    if (typeof value !== 'object' || value === null) throw new TypeError('Observers.run requires an Observation object');
     this.inner.run({current:text(value.current),before:text(value.before),after:value.after == null ? undefined : text(value.after),instruction:text(value.instruction)});
   }
   writeReport(value: Path): void { this.inner.writeReport(path(value).inner); }
@@ -422,14 +450,38 @@ export class BatchPool {
 export interface FileTask { input:Path; pipelineId:string; output:Path }
 export interface BufferTask { input:Path; pipelineId:string }
 function fileTasks(tasks: readonly FileTask[]) {
-  return tasks.map(t => ({input:path(t.input).inner,pipelineId:text(t.pipelineId),output:path(t.output).inner}));
+  if (!Array.isArray(tasks)) throw new TypeError('file tasks must be an array of {input, pipelineId, output}');
+  return Array.from(tasks, task => {
+    if (typeof task !== 'object' || task === null) throw new TypeError('each file task must contain input, pipelineId and output');
+    return {input:path(task.input).inner,pipelineId:text(task.pipelineId),output:path(task.output).inner};
+  });
+}
+/** Pipeline inputs accepted by both register() and addTransform(). */
+export type PipelineSource = Pipeline | CompiledPipeline | readonly Instruction[];
+
+function instructions(values: readonly Instruction[]): InstanceType<typeof native.Instruction>[] {
+  return Array.from(values, value => {
+    if (!(value instanceof Instruction)) throw new TypeError('pipeline instruction arrays must contain Instruction objects');
+    return value.toNative();
+  });
+}
+function singleInstruction(value: Instruction | Pipeline): InstanceType<typeof native.Instruction> {
+  if (value instanceof Pipeline) value = value.asInstruction();
+  if (!(value instanceof Instruction)) throw new TypeError('expected an Instruction or a single-instruction Pipeline');
+  return value.toNative();
 }
 /** Complete processor facade. All calls execute synchronously on the calling Node thread. */
 export class Processor {
   private readonly inner = new native.Processor();
   createPipeline(): Pipeline { return Pipeline.forProcessor(this); }
-  register(plan: Pipeline): string { return this.inner.register(plan.lower()); }
-  addTransform(instructions: readonly Instruction[]): string { return this.inner.addTransform(instructions.map(i => i.toNative())); }
+  /** Validate and register an independent pipeline snapshot, returning its ID. */
+  register(source: PipelineSource): string {
+    if (Array.isArray(source)) return this.inner.addTransform(instructions(source));
+    if (source instanceof Pipeline || source instanceof CompiledPipeline) return this.inner.register(source.lower());
+    throw new TypeError('register expects a Pipeline, CompiledPipeline, or array of Instruction objects; build() returns an ID that is already registered');
+  }
+  /** Register an externally constructed pipeline or an array of instructions. */
+  addTransform(source: PipelineSource): string { return this.register(source); }
   removeTransform(id: string): void { this.inner.removeTransform(text(id)); }
   transformExists(id: string): boolean { return this.inner.transformExists(text(id)); }
   listTransforms(): string[] { return this.inner.listTransforms(); }
@@ -443,30 +495,39 @@ export class Processor {
   writeToBytecodeFile(id: string, value: Path): void { this.inner.writeToBytecodeFile(text(id),path(value).inner); }
   runTransform(id: string, input: string): string { return this.inner.runTransform(text(id),text(input)); }
   processAll(id: string, input: string): string { return this.inner.processAll(text(id),text(input)); }
-  processSingle(instruction: Instruction, input: string): string { return this.inner.processSingle(instruction.toNative(),text(input)); }
+  processSingle(instruction: Instruction | Pipeline, input: string): string { return this.inner.processSingle(singleInstruction(instruction),text(input)); }
   processAllWithDebug(id: string, input: string): string { return this.inner.processAllWithDebug(text(id),text(input)); }
-  processSingleWithDebug(instruction: Instruction, input: string): string { return this.inner.processSingleWithDebug(instruction.toNative(),text(input)); }
+  processSingleWithDebug(instruction: Instruction | Pipeline, input: string): string { return this.inner.processSingleWithDebug(singleInstruction(instruction),text(input)); }
   processFile(id: string, input: Path, output: Path): void { this.inner.processFile(text(id),path(input).inner,path(output).inner); }
   processBatch(tasks: readonly FileTask[]): (TextForgeError | null)[] {
     return this.inner.processBatch(fileTasks(tasks)).map(r => r.error ? new TextForgeError(r.error) : null);
   }
   processBatchInPool(pool: BatchPool, tasks: readonly FileTask[]): (TextForgeError | null)[] {
+    if (!(pool instanceof BatchPool)) throw new TypeError('processBatchInPool requires a BatchPool');
     return this.inner.processBatchInPool(pool.inner,fileTasks(tasks)).map(r => r.error ? new TextForgeError(r.error) : null);
   }
   processAllWithWatchers(id: string, input: string, observers: Observers, report: Path): string {
+    if (!(observers instanceof Observers)) throw new TypeError('processAllWithWatchers requires an Observers instance');
     return this.inner.processAllWithWatchers(text(id),text(input),observers.inner,path(report).inner);
   }
   processAllBuffered(id: string, input: PortableBuffer): PortableBuffer {
+    if (!(input instanceof PortableBuffer)) throw new TypeError('processAllBuffered requires a PortableBuffer');
     return new PortableBuffer(this.inner.processAllBuffered(text(id),input.inner));
   }
   processSingleBuffered(instruction: string, input: PortableBuffer): PortableBuffer {
+    if (!(input instanceof PortableBuffer)) throw new TypeError('processSingleBuffered requires a PortableBuffer');
     return new PortableBuffer(this.inner.processSingleBuffered(text(instruction),input.inner));
   }
   processFileBuffered(id: string, input: Path, options = new BufferOptions()): PortableBuffer {
-    return new PortableBuffer(this.inner.processFileBuffered(text(id),path(input).inner,options.inner));
+    return new PortableBuffer(this.inner.processFileBuffered(text(id),path(input).inner,bufferOptions(options)));
   }
   processBatchBuffered(tasks: readonly BufferTask[], options = new BufferOptions()): (PortableBuffer | TextForgeError)[] {
-    return this.inner.processBatchBuffered(tasks.map(t => ({pipelineId:text(t.pipelineId),input:path(t.input).inner})),options.inner)
+    if (!Array.isArray(tasks)) throw new TypeError('buffer tasks must be an array of {input, pipelineId}');
+    const requests = Array.from(tasks, task => {
+      if (typeof task !== 'object' || task === null) throw new TypeError('each buffer task must contain input and pipelineId');
+      return {pipelineId:text(task.pipelineId),input:path(task.input).inner};
+    });
+    return this.inner.processBatchBuffered(requests,bufferOptions(options))
       .map(r => r.error ? new TextForgeError(r.error) : new PortableBuffer(r.buffer!));
   }
 }
