@@ -1,0 +1,2 @@
+# Unified diff context markers contain one space on otherwise empty lines.
+docs/core-0.2.0.patch -whitespace

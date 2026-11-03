@@ -524,6 +524,7 @@ fn publish_report(
     path: &Path,
     emit: impl FnOnce(&mut dyn Write) -> Result<(), TextForgeError>,
 ) -> Result<(), TextForgeError> {
+    crate::utils::validations::prepare_output_path(path, "WatcherList.to_json")?;
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())

@@ -3,9 +3,6 @@ use std::{borrow::Cow, path::Path};
 use crate::utils::errors::{TextForgeError, TextForgeErrorCode};
 
 pub fn check_file_path(path: &Path, ext: Option<&str>) -> Result<(), TextForgeError> {
-    let allowed_extensions = ["textforge", "tft", "textforgebc", "tfb"];
-    let parsed_ext = ext.unwrap_or("tft");
-
     // canonicalize() exige que o path exista; isso é ok aqui porque queremos validar um arquivo real.
     let path = path.canonicalize().map_err(|e| {
         TextForgeError::new(
@@ -15,30 +12,7 @@ pub fn check_file_path(path: &Path, ext: Option<&str>) -> Result<(), TextForgeEr
         )
     })?;
 
-    // Extensão
-    let file_ext = path.extension().and_then(|x| x.to_str()).ok_or_else(|| {
-        TextForgeError::new(
-            TextForgeErrorCode::ValidationError("No file extension found".into()),
-            Cow::Borrowed("check_file_path"),
-            path.to_string_lossy().to_string(),
-        )
-    })?;
-
-    if ext.is_some() && file_ext != parsed_ext {
-        return Err(TextForgeError::new(
-            TextForgeErrorCode::ValidationError("Wrong file extension".into()),
-            Cow::Borrowed("check_file_path"),
-            path.to_string_lossy().to_string(),
-        ));
-    }
-
-    if ext.is_none() && !allowed_extensions.contains(&file_ext) {
-        return Err(TextForgeError::new(
-            TextForgeErrorCode::ValidationError("Wrong file extension".into()),
-            Cow::Borrowed("check_file_path"),
-            path.to_string_lossy().to_string(),
-        ));
-    }
+    check_pipeline_extension(&path, ext)?;
 
     // Diretório pai (redundante depois do canonicalize, mas mantém a intenção explícita)
     let parent = path.parent().ok_or_else(|| {
@@ -66,6 +40,77 @@ pub fn check_file_path(path: &Path, ext: Option<&str>) -> Result<(), TextForgeEr
     }
 
     Ok(())
+}
+
+/// Validate format extensions independently from whether the destination exists.
+fn check_pipeline_extension(path: &Path, expected: Option<&str>) -> Result<(), TextForgeError> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| {
+            TextForgeError::new(
+                TextForgeErrorCode::ValidationError("No file extension found".into()),
+                "check_file_path",
+                path.display().to_string(),
+            )
+        })?;
+    let accepted = match expected {
+        Some("textforge" | "tft") => matches!(extension, "textforge" | "tft"),
+        Some("textforgebc" | "tfb") => matches!(extension, "textforgebc" | "tfb"),
+        Some(expected) => extension == expected,
+        None => matches!(extension, "textforge" | "tft" | "textforgebc" | "tfb"),
+    };
+    if !accepted {
+        let supported = match expected {
+            Some("textforge" | "tft") => ".textforge or .tft",
+            Some("textforgebc" | "tfb") => ".textforgebc or .tfb",
+            Some(extension) => extension,
+            None => ".textforge, .tft, .textforgebc or .tfb",
+        };
+        return Err(TextForgeError::new(
+            TextForgeErrorCode::ValidationError(
+                format!("Unsupported pipeline extension '.{extension}'; expected {supported}")
+                    .into(),
+            ),
+            "check_file_path",
+            path.display().to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Prepare a write destination without requiring a pre-existing output file.
+/// Parent directories are created only after callers have validated their data.
+pub(crate) fn prepare_output_path(path: &Path, instruction: &str) -> Result<(), TextForgeError> {
+    if path.file_name().is_none() || path.is_dir() {
+        return Err(TextForgeError::new(
+            TextForgeErrorCode::ValidationError("Output path must name a file".into()),
+            instruction.to_owned(),
+            path.display().to_string(),
+        ));
+    }
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            TextForgeError::new(
+                TextForgeErrorCode::FileOpeningError(error.to_string().into()),
+                instruction.to_owned(),
+                path.display().to_string(),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Check a pipeline output's format before creating its parent directories.
+pub(crate) fn check_pipeline_output_path(
+    path: &Path,
+    extension: Option<&str>,
+) -> Result<(), TextForgeError> {
+    check_pipeline_extension(path, extension)?;
+    prepare_output_path(path, "pipeline output")
 }
 
 /// Valida limites de chunk com índices em *contagem de chars* (não bytes),

@@ -12,13 +12,32 @@ library-only, derived from the published original before its binary declarations
 with its own empty workspace. Runtime dependencies and production feature names
 are unchanged. `Cargo.lock` fixes the adapter's dependency resolution.
 
-The maintainer explicitly authorized the single production correction in
-[core-0.2.0.patch](core-0.2.0.patch). Numeric literal arguments in the value slot
-of portable `val`, `var` and `mutv` are checked against the native integer range
-and converted to decimal text, exactly as the public Rust builder does. Previously
-the portable path rejected them because the textual registry describes that slot
-as String. Normalization belongs to the shared portable layer, and the binding
-has no instruction-specific workaround. No public Rust signatures are changed.
+The reviewable [core-0.2.0.patch](core-0.2.0.patch) records the original approved
+numeric-assignment correction and the persistence corrections requested after
+real Node usage exposed failures:
+
+- Numeric values in portable `val`, `var` and `mutv` match the public builder's
+  native-size check and decimal-text normalization.
+- Pipeline output validation handles new files separately from input validation;
+  parents are created after validation, without canonicalizing a missing output.
+  `.tft` and `.tfb` aliases work for the corresponding import/export formats.
+- Unresolved text serialization uses registry syntax and shell quoting, and text
+  parsing recognizes references in numeric and instruction-valued slots. Text
+  limitations (line breaks and unsupported reference names) return explicit
+  serialization errors recommending bytecode. Encoding completes before opening
+  a destination, preserving existing content on serialization failure.
+- Buffered file exports and watcher reports create missing parent directories;
+  buffer operations also create a configured spill directory when needed.
+- `raw`, `rfw` and `null` opcode implementations match the existing registry.
+  Neither the bytecode layout nor registered opcode assignments are changed.
+
+Old bytecode files exported with incorrect replace/null opcode implementations
+must be regenerated from their original plans. An incorrectly encoded opcode
+cannot reveal which instruction its original author intended.
+
+All production adapter calls still use `api::portable`; shared path, parser and
+serialization fixes live in the bundled core. No Rust method signatures or
+canonical file extensions are renamed, and no new runtime dependency is added.
 
 [core-provenance.json](core-provenance.json) hashes every bundled file.
 `python3 scripts/check-core.py` verifies the snapshot, recorded source revision
@@ -27,7 +46,9 @@ and the exact patch against the published crate. It downloads nothing; run
 upstream reference has not been fetched. The 80 builder reference cases are
 executed against the **unmodified published crate**, while the processor reference
 uses native public methods plus portable-only errors from the patched snapshot.
-The numeric regression also verifies rejection of unrelated numeric String slots.
+The numeric and persistence regressions cover these corrections directly through
+the production portable API; Node also round-trips all 80 builder references
+through both file formats.
 
 To update the core: obtain maintainer approval, replace the snapshot, review and
 regenerate the patch/provenance, update the compatibility matrix and all parity

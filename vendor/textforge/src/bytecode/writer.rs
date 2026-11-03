@@ -2,14 +2,16 @@ use std::{fs::OpenOptions, io::Write, path::Path};
 
 use crate::{
     parser::resolve_var::TokenWrapper,
-    utils::{errors::TextForgeError, validations::check_file_path},
+    utils::{errors::TextForgeError, validations::check_pipeline_output_path},
 };
 
 pub fn write_bytecode_to_file(
     path: &Path,
     tokens: Vec<TokenWrapper>,
 ) -> Result<(), TextForgeError> {
-    check_file_path(path, None)?;
+    let mut encoded = Vec::new();
+    write_bytecode(&mut encoded, &tokens)?;
+    check_pipeline_output_path(path, None)?;
 
     let mut file = match OpenOptions::new()
         .create(true)
@@ -29,7 +31,13 @@ pub fn write_bytecode_to_file(
         }
     };
 
-    write_bytecode(&mut file, &tokens)
+    file.write_all(&encoded).map_err(|error| {
+        TextForgeError::new(
+            crate::utils::errors::TextForgeErrorCode::FileWritingError(error.to_string().into()),
+            "write_bytecode_to_file",
+            path.display().to_string(),
+        )
+    })
 }
 
 /// Encode one complete pipeline, including when the sink accepts short writes.

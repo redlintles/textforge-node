@@ -23,8 +23,16 @@ pub struct BufferOptions {
 }
 impl BufferOptions {
     pub(super) fn core(&self) -> Result<TextBufferOptions, BindingError> {
+        let threshold = native_size(self.memory_threshold, "BufferOptions")?;
+        std::fs::create_dir_all(self.spill_directory.as_path()).map_err(|error| {
+            execution(TextForgeError::new(
+                TextForgeErrorCode::FileOpeningError(error.to_string().into()),
+                "BufferOptions.spill_directory",
+                self.spill_directory.as_path().display().to_string(),
+            ))
+        })?;
         Ok(TextBufferOptions::new(
-            native_size(self.memory_threshold, "BufferOptions")?,
+            threshold,
             self.spill_directory.0.clone(),
         ))
     }
@@ -152,6 +160,11 @@ impl PortableBuffer {
         self.core.copy_to(WriterBridge(writer)).map_err(execution)
     }
     pub fn write_to_file(&mut self, path: &FilePath) -> Result<u64, BindingError> {
+        crate::utils::validations::prepare_output_path(
+            path.as_path(),
+            "PortableBuffer.write_to_file",
+        )
+        .map_err(execution)?;
         let file = std::fs::File::create(path.as_path()).map_err(|error| {
             execution(TextForgeError::new(
                 TextForgeErrorCode::FileOpeningError(error.to_string().into()),
