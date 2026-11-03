@@ -24,6 +24,31 @@ counts return `bigint`.
   plans remember the processor; standalone plans require an argument.
 - `CompiledPipeline.process(input)`: independent owned result with a fresh context.
 
+Parameters with fixed options use exported literal unions:
+
+```ts
+import {Pipeline, Observers, getVar} from 'textforge-node';
+import type {NormalizationMode, BuiltinWatcherMetric} from 'textforge-node';
+
+const mode: NormalizationMode = 'nfkc'; // 'nfc' | 'nfd' | 'nfkc' | 'nfkd'
+new Pipeline().normalizeUnicode(mode);
+new Pipeline().normalizeUnicode(getVar('mode')); // Runtime context reference.
+
+const metric: BuiltinWatcherMetric = 'word_count';
+const observers = new Observers();
+observers.setBuiltin('words', metric);
+observers.close();
+```
+
+`normalizeUnicode(mode: NormalizationMode | Variable)` suggests all four exact,
+case-sensitive modes. A context-selected mode uses `Variable`/`getVar`; an arbitrary
+TypeScript `string` must be narrowed to `NormalizationMode` before this call.
+`Observers.setBuiltin` accepts the fifteen core names exposed by the
+`BuiltinWatcherMetric` union, and `Observers.builtinNames()` returns that typed
+list. Other text parameters and custom watcher names remain free-form strings.
+These declarations are generated from the pinned core and checked for freshness;
+runtime validation remains in the engine, including for plain JavaScript callers.
+
 For instruction-valued parameters, fluent methods accept an `Instruction`, a
 single-instruction `Pipeline`, or a `Variable`. Adapter tree recursion is bounded
 at 32 levels before native conversion; core rules may impose a smaller limit.

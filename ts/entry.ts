@@ -5,7 +5,7 @@ export {
   coreVersion, features, getVar, version,
 } from './index.js';
 export type {
-  Argument, BufferTask, ErrorStage, Features, FileTask, InstructionArgument,
-  Integer, NumberArgument, Observation, Observer, Path, PipelineBody,
+  Argument, BufferTask, BuiltinWatcherMetric, ErrorStage, Features, FileTask, InstructionArgument,
+  Integer, NormalizationMode, NumberArgument, Observation, Observer, Path, PipelineBody,
   PipelineSource, StreamReader, StreamWriter, TextArgument, ValueArgument,
 } from './index.js';

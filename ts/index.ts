@@ -1,5 +1,7 @@
 /** Typed, owned Node.js interface to TextForge 0.2.0. */
 import native from './loader.cjs';
+import type {BuiltinWatcherMetric, NormalizationMode} from './options.js';
+export type {BuiltinWatcherMetric, NormalizationMode} from './options.js';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -174,7 +176,7 @@ export class Pipeline {
   }
   // BEGIN GENERATED BUILDER METHODS
   /** Mirrors Rust `TextForgeBuilderMethods::normalize_unicode` through `unorm`. */
-  normalizeUnicode(mode: TextArgument): Pipeline { return this.add('unorm', textArg(mode)); }
+  normalizeUnicode(mode: NormalizationMode | Variable): Pipeline { return this.add('unorm', textArg(mode)); }
   /** Mirrors Rust `TextForgeBuilderMethods::define_replace_map` through `rmapd`. */
   defineReplaceMap(name: TextArgument, pattern: TextArgument, replacement: TextArgument): Pipeline { return this.add('rmapd', textArg(name), textArg(pattern), textArg(replacement)); }
   /** Mirrors Rust `TextForgeBuilderMethods::execute_replace_map` through `rmape`. */
@@ -427,8 +429,8 @@ export class Observers {
     if (typeof callback !== 'function') throw new TypeError('Observers.set requires a synchronous observer callback');
     this.inner.set(text(name), value => text(callback(Object.freeze({...value}))));
   }
-  setBuiltin(name: string, metric: string): void { this.inner.setBuiltin(text(name),text(metric)); }
-  static builtinNames(): string[] { return native.Observers.builtinNames(); }
+  setBuiltin(name: string, metric: BuiltinWatcherMetric): void { this.inner.setBuiltin(text(name),text(metric)); }
+  static builtinNames(): BuiltinWatcherMetric[] { return native.Observers.builtinNames() as BuiltinWatcherMetric[]; }
   scheduleAll(name: string): void { this.inner.scheduleAll(text(name)); }
   reset(): void { this.inner.reset(); }
   close(): void { this.inner.close(); }

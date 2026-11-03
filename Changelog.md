@@ -2,6 +2,15 @@
 
 ## 0.1.0 — Unreleased
 
+### Precise TypeScript options
+
+- Expose normalization modes and built-in watcher metrics as generated literal
+  unions, including typed `Observers.builtinNames()` results.
+- Preserve explicit execution-context variables for Unicode normalization and
+  free-form text for parameters whose values are not a closed set.
+- Verify accepted and rejected arguments in source and installed ESM/CommonJS
+  consumers, with generated declarations tied to the pinned core's option sets.
+
 ### Robustness corrections
 
 - Accept external `Pipeline`, `CompiledPipeline` and instruction arrays in both

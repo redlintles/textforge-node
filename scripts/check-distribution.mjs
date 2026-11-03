@@ -53,7 +53,7 @@ for(const source of [plan,plan.compile()]) {
 `;
   writeFileSync(join(consumer,'smoke.mjs'),smoke);
   run(process.execPath,['smoke.mjs'],consumer);
-  const esm=`import {Pipeline,Processor,PortableBuffer,TextForgeError,Instruction} from '${manifest.name}';
+  const esm=`import {Pipeline,Processor,PortableBuffer,TextForgeError,Instruction,Observers,getVar} from '${manifest.name}';
 const processor=new Processor(); const id=processor.createPipeline().addToBeginning('🍌').deleteLine(1n).build();
 const output:string=processor.processAll(id,'é');
 const length:bigint=PortableBuffer.fromText(output).lenBytes();
@@ -65,10 +65,25 @@ const external=new Pipeline().addToEnd('!');
 processor.addTransform(external);
 processor.register(external.compile());
 processor.register([new Instruction('ate','!')]);
+type NormalizationMode = import('${manifest.name}').NormalizationMode;
+type BuiltinWatcherMetric = import('${manifest.name}').BuiltinWatcherMetric;
+const mode: NormalizationMode = 'nfkc';
+external.normalizeUnicode(mode).normalizeUnicode(getVar('mode'));
+for (const form of ['nfc','nfd','nfkc','nfkd'] as const) external.normalizeUnicode(form);
+const observers = new Observers();
+const metrics: BuiltinWatcherMetric[] = Observers.builtinNames();
+for (const metric of metrics) observers.setBuiltin('chosen',metric);
+// @ts-expect-error normalization options are a closed union
+external.normalizeUnicode('NFC');
+// @ts-expect-error unsupported normalization option
+external.normalizeUnicode('unknown');
+// @ts-expect-error misspelled built-in metric
+observers.setBuiltin('words','wordCount');
+observers.close();
 void length; void TextForgeError;
 `;
   writeFileSync(join(consumer,'consumer.mts'),esm);
-  writeFileSync(join(consumer,'consumer.cts'),esm.replace(`import {Pipeline,Processor,PortableBuffer,TextForgeError,Instruction} from '${manifest.name}';`,`import binding = require('${manifest.name}');\nconst {Pipeline,Processor,PortableBuffer,TextForgeError,Instruction}=binding;`));
+  writeFileSync(join(consumer,'consumer.cts'),esm.replace(`import {Pipeline,Processor,PortableBuffer,TextForgeError,Instruction,Observers,getVar} from '${manifest.name}';`,`import binding = require('${manifest.name}');\nconst {Pipeline,Processor,PortableBuffer,TextForgeError,Instruction,Observers,getVar}=binding;`));
   run(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--noEmit','--strict','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','consumer.mts','consumer.cts'],consumer);
   console.log(`Verified installed ${manifest.name} ${manifest.version}: ESM, CommonJS, declarations${build===root?'':' and independent source rebuild'}`);
 } finally {

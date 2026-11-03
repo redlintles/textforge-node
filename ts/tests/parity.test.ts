@@ -62,6 +62,7 @@ test('native Rust processor results and complete portable diagnostics', t => {
     watched:()=>{observers.setBuiltin('size','current_len_chars');observers.scheduleAll('size');return processor.processAllWithWatchers(id,'x',observers,paths.report);},
     report:()=>readFileSync(paths.report,'utf8'),
     callback_error:()=>{const o=new Observers();try{o.set('bad',()=>{throw new Error('boom');});o.scheduleAll('bad');return processor.processAllWithWatchers(processor.register(new Pipeline().addToBeginning('🍌')),'x',o,join(dir,'failed.json'));}finally{o.close();}},
+    // @ts-expect-error Exercise the core error for an invalid metric supplied by plain JavaScript.
     builtin_error:()=>{observers.setBuiltin('x','missing');return '';},
     invalid_utf8:()=>{let sent=false;PortableBuffer.fromReader(()=>{if(sent)return Buffer.alloc(0);sent=true;return Buffer.from([255]);},new BufferOptions(1,dir));return '';},
   };

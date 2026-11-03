@@ -63,6 +63,12 @@ const { Pipeline } = require('textforge-node');
 console.log(new Pipeline().normalizeUnicode('nfc').compile().process('e\u0301'));
 ```
 
+Fixed option sets have literal union types for editor completion:
+`normalizeUnicode` accepts `'nfc' | 'nfd' | 'nfkc' | 'nfkd' | Variable`, and
+`Observers.setBuiltin` accepts the `BuiltinWatcherMetric` union. Both option types
+are exported as `NormalizationMode` and `BuiltinWatcherMetric` for TypeScript
+consumers. Context references remain supported through `getVar`.
+
 Every fluent edit returns a **new** plan. Keep the returned value. Compilation
 can be repeated and creates independent executables with fresh execution context
 per call. `Processor` additionally exposes registration, editable instruction
