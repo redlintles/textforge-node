@@ -41,11 +41,11 @@ fn registered() -> (PortableProcessor, String) {
 fn text_and_bytecode_exports_create_new_files_and_parent_directories() {
     let directory = Directory::new();
     let (mut processor, id) = registered();
-    for extension in ["textforge", "tft", "textforgebc", "tfb"] {
+    for extension in ["textforge", "tft", "txf", "textforgebc", "tfb", "txb"] {
         let filename = format!("nested/{extension}/pipeline.{extension}");
         let path = directory.path(&filename);
         assert!(!directory.0.join(&filename).exists());
-        let restored = if matches!(extension, "textforge" | "tft") {
+        let restored = if matches!(extension, "textforge" | "tft" | "txf") {
             processor.write_pipeline_to_file(&id, &path).unwrap();
             processor.get_pipeline_from_file(&path).unwrap()
         } else {

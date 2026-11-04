@@ -40,15 +40,15 @@ import * as esm from '${manifest.name}';
 const cjs=createRequire(import.meta.url)('${manifest.name}');
 assert.equal(esm.Pipeline,cjs.Pipeline);
 const plan=new esm.Pipeline().trimBothSides().addToBeginning('Banana ').addToEnd('!')
-  .blockAssoc('banana',new cjs.Pipeline().toReverse().toLowercaseAll().replaceAllWith('a','o')).callBlock('banana');
+  .blockAssoc('banana',new cjs.Pipeline().toReverse().toLowercaseAll().replaceAllWith('a','o')).normalizeUnicode('nfc').callBlock('banana');
 const processor=new cjs.Processor();
 for(const source of [plan,plan.compile()]) {
   const id=processor.register(source);
   assert.equal(processor.processAll(id,' é '),'!é ononob');
-  processor.writePipelineToFile(id,'new folder/pipeline.tft');
-  processor.writeToBytecodeFile(id,'new folder/pipeline.tfb');
-  assert.equal(processor.processAll(processor.getPipelineFromFile('new folder/pipeline.tft'),' é '),'!é ononob');
-  assert.equal(processor.processAll(processor.readFromBytecodeFile('new folder/pipeline.tfb'),' é '),'!é ononob');
+  processor.writePipelineToFile(id,'new folder/banana.txf');
+  processor.writeToBytecodeFile(id,'new folder/banana.txb');
+  assert.equal(processor.processAll(processor.getPipelineFromFile('new folder/banana.txf'),' é '),'!é ononob');
+  assert.equal(processor.processAll(processor.readFromBytecodeFile('new folder/banana.txb'),' é '),'!é ononob');
 }
 `;
   writeFileSync(join(consumer,'smoke.mjs'),smoke);

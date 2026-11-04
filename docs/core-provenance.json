@@ -228,7 +228,7 @@
     "src/utils/regexes.rs": "40c5e215de513588bfd1f6f8d828b6d461f750bf82fa18c3be47177bbc523f26",
     "src/utils/test_helpers.rs": "a77627a1c17463c366f8bd82f04ae3159bef8611f387a1417b8d83b60440b4a4",
     "src/utils/transforms.rs": "4bb1a18cdb3842bcc47768ecd5ca2a23603623528381d3d87c9e057108aa27ab",
-    "src/utils/validations.rs": "e3deafb9af024cd9f022590db8794b449b7f25916adee33f91207102a21879bc",
+    "src/utils/validations.rs": "817c3173b3213f85925e625c055d26234d80a4d4388f65fdee876b25aa63fbc4",
     "src/watchers/default_watchers.rs": "c2d364736a91883124e15c02a3b82850cf07dd1b493132816e406bbc99ff0105",
     "src/watchers/mod.rs": "450254e329c0f41dcfe1d91d64c283c6e8095d737b9d64aaa2a22b22742b1e06",
     "src/watchers/shared_statistics.rs": "dc62e8cf60a6f409feabbd4c47608a91d565e2dced7fb0f0ab8d88f884bbe10f",

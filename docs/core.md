@@ -20,7 +20,8 @@ real Node usage exposed failures:
   native-size check and decimal-text normalization.
 - Pipeline output validation handles new files separately from input validation;
   parents are created after validation, without canonicalizing a missing output.
-  `.tft` and `.tfb` aliases work for the corresponding import/export formats.
+  `.tft`/`.txf` and `.tfb`/`.txb` aliases work for the corresponding text and
+  bytecode import/export formats.
 - Unresolved text serialization uses registry syntax and shell quoting, and text
   parsing recognizes references in numeric and instruction-valued slots. Text
   limitations (line breaks and unsupported reference names) return explicit

@@ -55,17 +55,20 @@ fn check_pipeline_extension(path: &Path, expected: Option<&str>) -> Result<(), T
             )
         })?;
     let accepted = match expected {
-        Some("textforge" | "tft") => matches!(extension, "textforge" | "tft"),
-        Some("textforgebc" | "tfb") => matches!(extension, "textforgebc" | "tfb"),
+        Some("textforge" | "tft" | "txf") => matches!(extension, "textforge" | "tft" | "txf"),
+        Some("textforgebc" | "tfb" | "txb") => matches!(extension, "textforgebc" | "tfb" | "txb"),
         Some(expected) => extension == expected,
-        None => matches!(extension, "textforge" | "tft" | "textforgebc" | "tfb"),
+        None => matches!(
+            extension,
+            "textforge" | "tft" | "txf" | "textforgebc" | "tfb" | "txb"
+        ),
     };
     if !accepted {
         let supported = match expected {
-            Some("textforge" | "tft") => ".textforge or .tft",
-            Some("textforgebc" | "tfb") => ".textforgebc or .tfb",
+            Some("textforge" | "tft" | "txf") => ".textforge, .tft or .txf",
+            Some("textforgebc" | "tfb" | "txb") => ".textforgebc, .tfb or .txb",
             Some(extension) => extension,
-            None => ".textforge, .tft, .textforgebc or .tfb",
+            None => ".textforge, .tft, .txf, .textforgebc, .tfb or .txb",
         };
         return Err(TextForgeError::new(
             TextForgeErrorCode::ValidationError(

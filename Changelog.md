@@ -2,6 +2,13 @@
 
 ## 0.1.0 — Unreleased
 
+### Export filename compatibility
+
+- Accept `.txf` and `.txb` as additional text/bytecode filename aliases, while
+  preserving `.tft`, `.tfb`, `.textforge` and `.textforgebc` support.
+- Exercise the reported normalization/block/export script against the installed
+  tarball, creating both output files without placeholders.
+
 ### Precise TypeScript options
 
 - Expose normalization modes and built-in watcher metrics as generated literal
