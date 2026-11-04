@@ -39,12 +39,12 @@ fn main() {
         })(),
     );
     record(
-        "define_replace_map",
+        "add_replace_rule",
         (|| {
             let mut processor = TextForgeProcessor::new();
             let id = processor
                 .create_pipeline()
-                .define_replace_map("animals", "cat", "dog")?
+                .add_replace_rule("animals", "cat", "dog")?
                 .build()?;
             processor.process_all(&id, "cat")
         })(),
@@ -55,7 +55,7 @@ fn main() {
             let mut processor = TextForgeProcessor::new();
             let id = processor
                 .create_pipeline()
-                .define_replace_map("animals", "cat", "dog")?
+                .add_replace_rule("animals", "cat", "dog")?
                 .execute_replace_map("animals")?
                 .build()?;
             processor.process_all(&id, "cat")
@@ -821,6 +821,22 @@ fn main() {
                 })?
                 .build()?;
             processor.process_all(&id, "x")
+        })(),
+    );
+    record(
+        "define_replace_map",
+        (|| {
+            let mut processor = TextForgeProcessor::new();
+            let id = processor
+                .create_pipeline()
+                .define_replace_map("animals", |map| {
+                    map.add_replace("cat", "wolf")?;
+                    map.add_replace("wolf", "dog")?;
+                    map.end()
+                })?
+                .execute_replace_map("animals")?
+                .build()?;
+            processor.process_all(&id, "cat wolf")
         })(),
     );
 }

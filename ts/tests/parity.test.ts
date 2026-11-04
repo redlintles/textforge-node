@@ -7,13 +7,14 @@ type Case = {name:string;input:string;steps:Step[];result:{ok?:string;error?:num
 function camel(value: string): string { return value.replace(/_([a-z])/g,(_,c:string) => c.toUpperCase()); }
 function argument(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value;
-  const v=value as {variable?:string;instruction?:[string,unknown[]];body?:Step[]};
+  const v=value as {variable?:string;instruction?:[string,unknown[]];body?:Step[];map?:[string,string][]};
   if (v.variable) return new Variable(v.variable);
   if (v.instruction) {
     const [name,args]=v.instruction;
     return new Pipeline()[camel(name) as 'addToBeginning'](...args.map(argument) as [string]);
   }
   if (v.body) return chain(v.body);
+  if (v.map) return (map: import('../index.js').ReplaceMapBuilder) => { for(const [pattern,replacement] of v.map!) map.addReplace(pattern,replacement); map.end(); };
   throw new TypeError('unknown fixture argument');
 }
 function chain(steps: Step[]): Pipeline {

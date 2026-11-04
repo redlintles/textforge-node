@@ -162,3 +162,15 @@ The adapter never parses terminal-formatted engine error text. Boundary type,
 Unicode, numeric and closed-resource errors use normal JavaScript exceptions.
 `features()` reports enabled production features; `version` and `coreVersion`
 identify the binding and core base version.
+
+## Replacement-map configuration
+
+`Pipeline.defineReplaceMap(name, configure)` supplies a scoped `ReplaceMapBuilder`.
+Call `addReplace(pattern, replacement)` in priority order, then `end()`. The
+callback must complete synchronously and return `undefined` (as `end()` does).
+Rules use the engine's regex/capture semantics and normal variable interpolation.
+The scope cannot be reused after return. Configuration failures append nothing;
+`end()` emits no halt instruction. Empty definitions fail portable validation.
+Maps execute only when `executeReplaceMap(name)` is reached, using non-cascading
+replacement. Single-rule calls use `addReplaceRule(name, pattern, replacement)`;
+the earlier three-argument `defineReplaceMap` overload is retained and deprecated.

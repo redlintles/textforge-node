@@ -40,15 +40,17 @@ import * as esm from '${manifest.name}';
 const cjs=createRequire(import.meta.url)('${manifest.name}');
 assert.equal(esm.Pipeline,cjs.Pipeline);
 const plan=new esm.Pipeline().trimBothSides().addToBeginning('Banana ').addToEnd('!')
-  .blockAssoc('banana',new cjs.Pipeline().toReverse().toLowercaseAll().replaceAllWith('a','o')).normalizeUnicode('nfc').callBlock('banana');
+  .blockAssoc('banana',new cjs.Pipeline().toReverse().toLowercaseAll().replaceAllWith('a','o')).normalizeUnicode('nfc').callBlock('banana')
+  .defineReplaceMap('rmap1',map=>map.addReplace('o','x').end()).executeReplaceMap('rmap1');
 const processor=new cjs.Processor();
 for(const source of [plan,plan.compile()]) {
   const id=processor.register(source);
-  assert.equal(processor.processAll(id,' é '),'!é ononob');
+  assert.equal(processor.processAll(id,' é '),'!é xnxnxb');
+  assert.equal(processor.processAllWithDebug(id,' é '),'!é xnxnxb');
   processor.writePipelineToFile(id,'new folder/banana.txf');
   processor.writeToBytecodeFile(id,'new folder/banana.txb');
-  assert.equal(processor.processAll(processor.getPipelineFromFile('new folder/banana.txf'),' é '),'!é ononob');
-  assert.equal(processor.processAll(processor.readFromBytecodeFile('new folder/banana.txb'),' é '),'!é ononob');
+  assert.equal(processor.processAll(processor.getPipelineFromFile('new folder/banana.txf'),' é '),'!é xnxnxb');
+  assert.equal(processor.processAll(processor.readFromBytecodeFile('new folder/banana.txb'),' é '),'!é xnxnxb');
 }
 `;
   writeFileSync(join(consumer,'smoke.mjs'),smoke);
@@ -61,6 +63,9 @@ const length:bigint=PortableBuffer.fromText(output).lenBytes();
 new Pipeline().repeat(true);
 // @ts-expect-error methods use camelCase
 new Pipeline().add_to_beginning('x');
+new Pipeline().defineReplaceMap('m', map=>map.addReplace('a','b').end());
+// @ts-expect-error async configuration is unsupported
+new Pipeline().defineReplaceMap('m', async map=>{map.addReplace('a','b').end();});
 const external=new Pipeline().addToEnd('!');
 processor.addTransform(external);
 processor.register(external.compile());

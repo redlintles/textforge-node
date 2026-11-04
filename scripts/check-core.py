@@ -16,6 +16,13 @@ PROVENANCE = ROOT / 'docs/core-provenance.json'
 PATCH = ROOT / 'docs/core-0.2.0.patch'
 PATCHED_FILES = {
     'src/api/portable/instruction.rs',
+    'src/api/mod.rs',
+    'src/api/portable/mod.rs',
+    'src/api/replace_map_builder.rs',
+    'src/api/processor.rs',
+    'src/api/processor/buffered.rs',
+    'src/context/execution_context.rs',
+    'src/utils/test_helpers.rs',
     'src/api/portable/buffered.rs',
     'src/bytecode/writer.rs',
     'src/parser/resolve_var.rs',
@@ -41,7 +48,7 @@ changed = set()
 for relative in actual:
     if relative == 'Cargo.toml':
         continue  # Documented library-only snapshot manifest.
-    old = (upstream / relative).read_bytes()
+    old = (upstream / relative).read_bytes() if (upstream / relative).exists() else b''
     new = (CORE / relative).read_bytes()
     if old != new:
         assert relative in PATCHED_FILES, f'Unexpected core modification: {relative}'

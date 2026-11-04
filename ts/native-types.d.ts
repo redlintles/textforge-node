@@ -123,6 +123,7 @@ export declare class Observers {
 export declare class Plan {
   constructor()
   add(instruction: Instruction): void
+  defineReplaceMap(name: NativeArgument, rules: Array<NativeReplaceRule>): void
   block(name: string, body: Plan): void
   containsEach(pattern: string, body: Plan): void
   compile(): CompiledPipeline
@@ -299,6 +300,21 @@ export interface NativeArgument {
   text?: string
   number?: bigint
   instruction?: Instruction
+}
+
+/**
+ * Owned regex/replacement pair used only by the adapter's map transport.
+ *
+ * ```
+ * use textforge::api::portable::{Argument, PipelinePlan};
+ * let mut plan = PipelinePlan::new();
+ * plan.define_replace_map(Argument::Text("m".into()), vec![(Argument::Text("a".into()), Argument::Text("b".into()))])?;
+ * # Ok::<(), textforge::api::portable::BindingError>(())
+ * ```
+ */
+export interface NativeReplaceRule {
+  pattern: NativeArgument
+  replacement: NativeArgument
 }
 
 /**

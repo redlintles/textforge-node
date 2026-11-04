@@ -2,6 +2,16 @@
 
 ## 0.1.0 — Unreleased
 
+### Scoped replacement maps and debug execution
+
+- Add `defineReplaceMap(name, configure)` and the typed `ReplaceMapBuilder`
+  methods `addReplace(pattern, replacement)` and `end()`.
+- Preserve three-argument calls and expose `addReplaceRule` for individual rules.
+- Stage definitions atomically through the portable API and test callback errors,
+  lifetime, synchronous-only configuration, ordered rules and persistence.
+- Fix debug block lookup to resolve the actual configured name once, preserving
+  context inspection and matching regular execution, including interpolated names.
+
 ### Export filename compatibility
 
 - Accept `.txf` and `.txb` as additional text/bytecode filename aliases, while

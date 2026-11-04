@@ -71,6 +71,31 @@ pub struct NativeArgument {
     pub number: Option<BigInt>,
     pub instruction: Option<Reference<Instruction>>,
 }
+
+fn argument(arg: NativeArgument) -> Result<p::Argument> {
+    Ok(match arg.kind.as_str() {
+        "text" => p::Argument::Text(
+            arg.text
+                .ok_or_else(|| napi::Error::from_reason("missing text"))?,
+        ),
+        "variable" => p::Argument::Variable(
+            arg.text
+                .ok_or_else(|| napi::Error::from_reason("missing variable"))?,
+        ),
+        "number" => p::Argument::Number(number(
+            arg.number
+                .ok_or_else(|| napi::Error::from_reason("missing number"))?,
+        )?),
+        "instruction" => p::Argument::Instruction(Box::new(
+            arg.instruction
+                .ok_or_else(|| napi::Error::from_reason("missing instruction"))?
+                .spec
+                .clone(),
+        )),
+        _ => return Err(napi::Error::from_reason("unknown argument kind")),
+    })
+}
+
 /// Owned instruction handle. Example: `new Instruction('atb', [{kind:'text',text:'!'}])`.
 ///
 /// ```
@@ -89,30 +114,10 @@ pub struct Instruction {
 impl Instruction {
     #[napi(constructor)]
     pub fn new(name: String, arguments: Vec<NativeArgument>) -> Result<Self> {
-        let mut args = Vec::new();
-        for arg in arguments {
-            args.push(match arg.kind.as_str() {
-                "text" => p::Argument::Text(
-                    arg.text
-                        .ok_or_else(|| napi::Error::from_reason("missing text"))?,
-                ),
-                "variable" => p::Argument::Variable(
-                    arg.text
-                        .ok_or_else(|| napi::Error::from_reason("missing variable"))?,
-                ),
-                "number" => p::Argument::Number(number(
-                    arg.number
-                        .ok_or_else(|| napi::Error::from_reason("missing number"))?,
-                )?),
-                "instruction" => p::Argument::Instruction(Box::new(
-                    arg.instruction
-                        .ok_or_else(|| napi::Error::from_reason("missing instruction"))?
-                        .spec
-                        .clone(),
-                )),
-                _ => return Err(napi::Error::from_reason("unknown argument kind")),
-            });
-        }
+        let args = arguments
+            .into_iter()
+            .map(argument)
+            .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             spec: p::InstructionSpec::new(name, args),
         })
@@ -163,6 +168,20 @@ impl Instruction {
             .collect()
     }
 }
+/// Owned regex/replacement pair used only by the adapter's map transport.
+///
+/// ```
+/// use textforge::api::portable::{Argument, PipelinePlan};
+/// let mut plan = PipelinePlan::new();
+/// plan.define_replace_map(Argument::Text("m".into()), vec![(Argument::Text("a".into()), Argument::Text("b".into()))])?;
+/// # Ok::<(), textforge::api::portable::BindingError>(())
+/// ```
+#[napi(object)]
+pub struct NativeReplaceRule {
+    pub pattern: NativeArgument,
+    pub replacement: NativeArgument,
+}
+
 /// Temporary lowering plan. Public API: `new Pipeline().trimBothSides().compile()`.
 ///
 /// ```
@@ -187,6 +206,21 @@ impl Plan {
     pub fn add(&mut self, env: Env, instruction: &Instruction) -> Result<()> {
         self.inner
             .add(instruction.spec.clone())
+            .map_err(|e| error(env, e))
+    }
+    #[napi]
+    pub fn define_replace_map(
+        &mut self,
+        env: Env,
+        name: NativeArgument,
+        rules: Vec<NativeReplaceRule>,
+    ) -> Result<()> {
+        let rules = rules
+            .into_iter()
+            .map(|rule| Ok((argument(rule.pattern)?, argument(rule.replacement)?)))
+            .collect::<Result<Vec<_>>>()?;
+        self.inner
+            .define_replace_map(argument(name)?, rules)
             .map_err(|e| error(env, e))
     }
     #[napi]

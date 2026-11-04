@@ -1,5 +1,6 @@
 /** Typed, owned Node.js interface to TextForge 0.2.0. */
 import native from './loader.cjs';
+import type {NativeArgument} from './native-types.js';
 import type {BuiltinWatcherMetric, NormalizationMode} from './options.js';
 export type {BuiltinWatcherMetric, NormalizationMode} from './options.js';
 import { tmpdir } from 'node:os';
@@ -70,12 +71,7 @@ export class Instruction {
   }
   /** @internal */
   toNative(): InstanceType<typeof native.Instruction> {
-    return new native.Instruction(this.name, this.arguments.map(value => {
-      if (typeof value === 'string') return {kind:'text', text:value};
-      if (typeof value === 'number' || typeof value === 'bigint') return {kind:'number', number:integer(value)};
-      if (value instanceof Variable) return {kind:'variable', text:value.name};
-      return {kind:'instruction', instruction:value.toNative()};
-    }));
+    return new native.Instruction(this.name, this.arguments.map(nativeArgument));
   }
   /** @internal */
   static fromNative(value: InstanceType<typeof native.Instruction>): Instruction {
@@ -90,6 +86,13 @@ export class Instruction {
     }));
   }
 }
+function nativeArgument(value: Argument): NativeArgument {
+  if (typeof value === 'string') return {kind:'text', text:value};
+  if (typeof value === 'number' || typeof value === 'bigint') return {kind:'number', number:integer(value)};
+  if (value instanceof Variable) return {kind:'variable', text:value.name};
+  return {kind:'instruction', instruction:value.toNative()};
+}
+
 function textArg(value: TextArgument): TextArgument {
   if (value instanceof Variable) return value;
   return text(value);
@@ -106,6 +109,40 @@ function instructionArg(value: InstructionArgument): Instruction | Variable {
   if (value instanceof Instruction || value instanceof Variable) return value;
   throw new TypeError('expected a single-instruction Pipeline, Instruction or Variable');
 }
+type ReplaceRule = readonly [TextArgument, TextArgument];
+type ReplaceMapDefinition = Readonly<{kind:'replaceMap'; name:TextArgument; rules:readonly ReplaceRule[]}>;
+/** Scoped map configuration. addReplace mutates this builder; end closes it. */
+export class ReplaceMapBuilder {
+  #rules: ReplaceRule[] = [];
+  #ended = false;
+  #active = true;
+  private constructor() {}
+  addReplace(pattern: TextArgument, replacement: TextArgument): this {
+    if (!this.#active || this.#ended) throw new TypeError('replace map configuration is closed');
+    this.#rules.push(Object.freeze([textArg(pattern),textArg(replacement)]));
+    return this;
+  }
+  end(): undefined {
+    if (!this.#active || this.#ended) throw new TypeError('replace map configuration is closed');
+    this.#ended = true;
+    return undefined;
+  }
+  /** @internal Run a construction callback and detach its immutable description. */
+  static configure(configure: ReplaceMapBody): readonly ReplaceRule[] {
+    const map = new ReplaceMapBuilder();
+    try {
+      const result: unknown = configure(map);
+      if (result !== undefined) {
+        if (result instanceof Promise) void result.catch(() => {});
+        throw new TypeError('replace map callbacks must be synchronous and return end() or nothing');
+      }
+      if (!map.#ended) throw new TypeError('replace map configuration must finish with end()');
+      return Object.freeze([...map.#rules]);
+    } finally { map.#active = false; }
+  }
+}
+export type ReplaceMapBody = (map: ReplaceMapBuilder) => undefined;
+
 type Group = Readonly<{kind:'block'|'containsEach'; value:string; body:Pipeline}>;
 export type PipelineBody = Pipeline | ((plan: Pipeline) => Pipeline);
 function body(value: PipelineBody): Pipeline {
@@ -115,24 +152,24 @@ function body(value: PipelineBody): Pipeline {
 }
 /** Immutable plan: every fluent edit returns a new plan; compile creates an independent executable. */
 export class Pipeline {
-  #nodes: readonly (Instruction | Group)[];
+  #nodes: readonly (Instruction | Group | ReplaceMapDefinition)[];
   #processor?: Processor;
   #depth: number;
   constructor(...instructions: Instruction[]) {
     if (instructions.some(i => !(i instanceof Instruction))) throw new TypeError('expected Instruction objects');
     this.#nodes = Object.freeze([...instructions]); this.#depth = 0;
   }
-  private static create(nodes: readonly (Instruction | Group)[], processor?: Processor): Pipeline {
+  private static create(nodes: readonly (Instruction | Group | ReplaceMapDefinition)[], processor?: Processor): Pipeline {
     const plan = new Pipeline();
     plan.#nodes = Object.freeze([...nodes]);
     plan.#processor = processor;
-    plan.#depth = Math.max(0, ...nodes.map(n => n instanceof Instruction ? 0 : n.body.#depth + 1));
+    plan.#depth = Math.max(0, ...nodes.map(n => n instanceof Instruction || n.kind === 'replaceMap' ? 0 : n.body.#depth + 1));
     if (plan.#depth > 32) throw new RangeError('group nesting exceeds adapter limit 32');
     return plan;
   }
   /** @internal */
   static forProcessor(processor: Processor): Pipeline { return Pipeline.create([],processor); }
-  private append(node: Instruction | Group): Pipeline {
+  private append(node: Instruction | Group | ReplaceMapDefinition): Pipeline {
     return Pipeline.create([...this.#nodes, node], this.#processor);
   }
   add(name: string, ...args: Argument[]): Pipeline { return this.append(new Instruction(name, ...args)); }
@@ -159,13 +196,14 @@ export class Pipeline {
     const plan = new native.Plan();
     for (const node of this.#nodes) {
       if (node instanceof Instruction) plan.add(node.toNative());
+      else if (node.kind === 'replaceMap') plan.defineReplaceMap(nativeArgument(node.name),node.rules.map(([pattern,replacement]) => ({pattern:nativeArgument(pattern),replacement:nativeArgument(replacement)})));
       else if (node.kind === 'block') plan.block(node.value,node.body.lower());
       else plan.containsEach(node.value,node.body.lower());
     }
     return plan;
   }
   private detached(): Pipeline {
-    return Pipeline.create(this.#nodes.map(node => node instanceof Instruction
+    return Pipeline.create(this.#nodes.map(node => node instanceof Instruction || node.kind === 'replaceMap'
       ? node
       : Object.freeze({...node, body:node.body.detached()})));
   }
@@ -174,11 +212,24 @@ export class Pipeline {
     if (!(processor instanceof Processor)) throw new TypeError('build requires a Processor; pass one or use processor.createPipeline()');
     return processor.register(this);
   }
+  /** Configure ordered rules with map.addReplace(...).end(). */
+  defineReplaceMap(name: TextArgument, configure: ReplaceMapBody): Pipeline;
+  /** @deprecated Use defineReplaceMap(name, map => map.addReplace(pattern, replacement).end()). */
+  defineReplaceMap(name: TextArgument, pattern: TextArgument, replacement: TextArgument): Pipeline;
+  defineReplaceMap(name: TextArgument, configure: ReplaceMapBody | TextArgument, replacement?: TextArgument): Pipeline {
+    name = textArg(name);
+    if (typeof configure !== 'function') {
+      if (replacement === undefined) throw new TypeError('defineReplaceMap requires a configuration callback or pattern and replacement');
+      return this.addReplaceRule(name,configure,replacement);
+    }
+    if (replacement !== undefined) throw new TypeError('a replace map callback does not accept a third argument');
+    return this.append(Object.freeze({kind:'replaceMap',name,rules:ReplaceMapBuilder.configure(configure as ReplaceMapBody)}));
+  }
   // BEGIN GENERATED BUILDER METHODS
   /** Mirrors Rust `TextForgeBuilderMethods::normalize_unicode` through `unorm`. */
   normalizeUnicode(mode: NormalizationMode | Variable): Pipeline { return this.add('unorm', textArg(mode)); }
-  /** Mirrors Rust `TextForgeBuilderMethods::define_replace_map` through `rmapd`. */
-  defineReplaceMap(name: TextArgument, pattern: TextArgument, replacement: TextArgument): Pipeline { return this.add('rmapd', textArg(name), textArg(pattern), textArg(replacement)); }
+  /** Mirrors Rust `TextForgeBuilderMethods::add_replace_rule` through `rmapd`. */
+  addReplaceRule(name: TextArgument, pattern: TextArgument, replacement: TextArgument): Pipeline { return this.add('rmapd', textArg(name), textArg(pattern), textArg(replacement)); }
   /** Mirrors Rust `TextForgeBuilderMethods::execute_replace_map` through `rmape`. */
   executeReplaceMap(name: TextArgument): Pipeline { return this.add('rmape', textArg(name)); }
   /** Mirrors Rust `TextForgeBuilderMethods::append_line` through `apl`. */

@@ -158,6 +158,18 @@ impl TokenWrapper {
             }
         }
     }
+    /// Bind once for debug execution and metadata, so logging cannot consult a
+    /// token template whose default parameters differ from the executed values.
+    pub(crate) fn bind_for_debug(
+        &self,
+        context: &mut GlobalExecutionContext,
+    ) -> Result<Box<dyn InstructionMethods>, TextForgeError> {
+        let params = ValType::resolve_variables(self.token.as_ref(), &self.params, context)?;
+        let mut token = self.token.clone();
+        token.set_params(&params)?;
+        Ok(token)
+    }
+
     pub fn apply_token<'a>(
         &self,
         input: Cow<'a, str>,

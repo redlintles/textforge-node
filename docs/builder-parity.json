@@ -1,6 +1,6 @@
 {
   "coreVersion": "0.2.0",
-  "apiSha256": "bef96ff7ff03b25b077068f070b4c8d36c77a407a1b3ed658a36c68a9f5dfff4",
+  "apiSha256": "556a68c7d6c5081cf51bb08e3296211a31830e3dc3521028ef87181b44a0f43b",
   "registrySha256": "ad1b705b07a1910150104f792fab983865ae6cc871df1efe37b40efb822c7d0a",
   "methods": [
     {
@@ -15,8 +15,8 @@
       ]
     },
     {
-      "rust": "define_replace_map",
-      "javascript": "defineReplaceMap",
+      "rust": "add_replace_rule",
+      "javascript": "addReplaceRule",
       "mnemonic": "rmapd",
       "parameters": [
         [
@@ -830,6 +830,21 @@
       "javascript": "end",
       "mnemonic": "end",
       "parameters": []
+    },
+    {
+      "rust": "define_replace_map",
+      "javascript": "defineReplaceMap",
+      "portable": "PipelinePlan::define_replace_map",
+      "parameters": [
+        [
+          "name",
+          "String"
+        ],
+        [
+          "configure",
+          "ReplaceMapBody"
+        ]
+      ]
     }
   ]
 }

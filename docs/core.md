@@ -16,6 +16,9 @@ The reviewable [core-0.2.0.patch](core-0.2.0.patch) records the original approve
 numeric-assignment correction and the persistence corrections requested after
 real Node usage exposed failures:
 
+- The scoped replacement-map API stages rules through the portable layer. Debug
+  execution binds parameters once and inspects the real block name without
+  removing it from the execution context.
 - Numeric values in portable `val`, `var` and `mutv` match the public builder's
   native-size check and decimal-text normalization.
 - Pipeline output validation handles new files separately from input validation;
@@ -37,18 +40,20 @@ must be regenerated from their original plans. An incorrectly encoded opcode
 cannot reveal which instruction its original author intended.
 
 All production adapter calls still use `api::portable`; shared path, parser and
-serialization fixes live in the bundled core. No Rust method signatures or
-canonical file extensions are renamed, and no new runtime dependency is added.
+serialization fixes live in the bundled core. The approved Rust `define_replace_map` signature now takes a scoped closure;
+the old single-rule operation is `add_replace_rule`. Canonical file extensions
+and runtime dependencies remain unchanged.
 
 [core-provenance.json](core-provenance.json) hashes every bundled file.
 `python3 scripts/check-core.py` verifies the snapshot, recorded source revision
 and the exact patch against the published crate. It downloads nothing; run
 `cargo fetch --manifest-path scripts/upstream/Cargo.toml` if its independent
-upstream reference has not been fetched. The 80 builder reference cases are
-executed against the **unmodified published crate**, while the processor reference
+upstream reference has not been fetched. The 81 builder reference cases execute native public Rust methods in the
+**documented patched snapshot**, including the new scoped API absent from the
+published baseline. The processor reference
 uses native public methods plus portable-only errors from the patched snapshot.
 The numeric and persistence regressions cover these corrections directly through
-the production portable API; Node also round-trips all 80 builder references
+the production portable API; Node also round-trips all 81 builder references
 through both file formats.
 
 To update the core: obtain maintainer approval, replace the snapshot, review and

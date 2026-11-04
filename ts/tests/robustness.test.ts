@@ -176,3 +176,41 @@ test('the reported script creates banana.txb and banana.txf without placeholders
   assert.deepEqual([...readFileSync(binary).subarray(0,8)],[38,235,245,8,244,137,1,179]);
   assert.ok(readFileSync(text,'utf8').includes('Banana '));
 });
+
+test('scoped replacement maps and debug execution preserve ordinary results',t=>{
+  const directoryPath=directory(t);
+  const base=new Pipeline().trimBothSides().addToBeginning('Banana ').addToEnd('!')
+    .blockAssoc('banana',new Pipeline().toReverse().toLowercaseAll().replaceAllWith('a','o'))
+    .normalizeUnicode('nfc').callBlock('banana').addToEnd('banana laranja fogo vermelho do inferno');
+  const plan=base.defineReplaceMap('rmap1',map=>map.addReplace('a','b').addReplace('o','x').addReplace('e','t').end()).executeReplaceMap('rmap1');
+  const legacy=base.defineReplaceMap('rmap1','a','b').defineReplaceMap('rmap1','o','x').defineReplaceMap('rmap1','e','t').executeReplaceMap('rmap1');
+  const expected='!tiurf xnxnxbbbnbnb lbrbnjb fxgx vtrmtlhx dx inftrnx';
+  const processor=new Processor();
+  for(const source of [plan,legacy]){
+    const id=processor.register(source);
+    assert.equal(processor.processAll(id,'Fruit'),expected);
+    assert.equal(processor.processAllWithDebug(id,'Fruit'),expected);
+    for(const extension of ['txf','txb']){
+      const path=join(directoryPath,'map.'+extension);
+      if(extension==='txf')processor.writePipelineToFile(id,path);else processor.writeToBytecodeFile(id,path);
+      const restored=extension==='txf'?processor.getPipelineFromFile(path):processor.readFromBytecodeFile(path);
+      assert.equal(processor.processAllWithDebug(restored,'Fruit'),expected);
+    }
+  }
+  const map=new Pipeline().defineReplaceMap('m',m=>m.addReplace('cat','wolf').addReplace('wolf','dog').end()).executeReplaceMap('m').addToEnd('!');
+  assert.equal(map.compile().process('cat wolf'),'wolf dog!');
+});
+
+test('map configuration is scoped, atomic, synchronous and requires end',()=>{
+  const base=new Pipeline().addToEnd('!');let escaped:api.ReplaceMapBuilder|undefined;
+  const plan=base.defineReplaceMap('m',map=>{escaped=map;map.addReplace('a','b').end();}).executeReplaceMap('m');
+  assert.equal(plan.compile().process('a'),'b!');
+  assert.throws(()=>escaped!.addReplace('x','y'),/closed/);
+  assert.throws(()=>escaped!.end(),/closed/);
+  assert.throws(()=>base.defineReplaceMap('m',map=>{map.addReplace('a','b');}),/end/);
+  assert.throws(()=>base.defineReplaceMap('m',map=>{map.addReplace('a','b').end();map.end();}),/closed/);
+  assert.throws(()=>base.defineReplaceMap('m',()=>{throw new Error('configuration failed');}),/configuration failed/);
+  assert.throws(()=>base.defineReplaceMap('m',m=>m.end()).compile(),e=>e instanceof TextForgeError&&e.stage==='validation');
+  assert.throws(()=>base.defineReplaceMap('m',(()=>Promise.resolve()) as unknown as api.ReplaceMapBody),/synchronous/);
+  assert.equal(base.compile().process('a'),'a!');
+});

@@ -29,3 +29,20 @@ export function checkLiteralOptionTypes(mode: NormalizationMode, metric: Builtin
   observers.setBuiltin('dynamic', arbitrary);
   observers.close();
 }
+
+export function checkReplaceMapScope(): void {
+  const pipeline = new Pipeline();
+  pipeline.defineReplaceMap('m', map => map.addReplace('a','b').addReplace('b','c').end());
+  // @ts-expect-error Asynchronous configuration cannot satisfy the scoped callback contract.
+  pipeline.defineReplaceMap('m', async map => { map.addReplace('a','b').end(); });
+  pipeline.defineReplaceMap('m', map => {
+    // @ts-expect-error Every rule needs a replacement value.
+    map.addReplace('pattern');
+    map.end();
+  });
+  pipeline.defineReplaceMap('m', map => {
+    // @ts-expect-error A map scope does not expose unrelated pipeline transforms.
+    map.addToEnd('!');
+    map.end();
+  });
+}

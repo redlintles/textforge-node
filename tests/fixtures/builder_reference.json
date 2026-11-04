@@ -15,11 +15,11 @@
     }
   },
   {
-    "name": "define_replace_map",
+    "name": "add_replace_rule",
     "input": "cat",
     "steps": [
       [
-        "define_replace_map",
+        "add_replace_rule",
         [
           "animals",
           "cat",
@@ -36,7 +36,7 @@
     "input": "cat",
     "steps": [
       [
-        "define_replace_map",
+        "add_replace_rule",
         [
           "animals",
           "cat",
@@ -1280,6 +1280,39 @@
     ],
     "result": {
       "ok": ""
+    }
+  },
+  {
+    "name": "define_replace_map",
+    "input": "cat wolf",
+    "steps": [
+      [
+        "define_replace_map",
+        [
+          "animals",
+          {
+            "map": [
+              [
+                "cat",
+                "wolf"
+              ],
+              [
+                "wolf",
+                "dog"
+              ]
+            ]
+          }
+        ]
+      ],
+      [
+        "execute_replace_map",
+        [
+          "animals"
+        ]
+      ]
+    ],
+    "result": {
+      "ok": "wolf dog"
     }
   }
 ]

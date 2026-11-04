@@ -54,6 +54,7 @@ for m in re.finditer(r'(?ms)^    fn (\w+)\(([^;]*?)\) -> Result<&mut Self, TextF
     args=', '.join([repr(token),*values])
     methods.append(f'  /** Mirrors Rust `TextForgeBuilderMethods::{name}` through `{token}`. */\n  {camel(name)}({", ".join(typed)}): Pipeline {{ return this.add({args}); }}\n')
     mapping.append({'rust':name,'javascript':camel(name),'mnemonic':token,'parameters':list(zip(parameters,kinds))})
+mapping.append({'rust':'define_replace_map','javascript':'defineReplaceMap','portable':'PipelinePlan::define_replace_map','parameters':[['name','String'],['configure','ReplaceMapBody']]})
 if len(mapping)<70: raise ValueError('Unexpected builder shape')
 output=ROOT/'ts/index.ts'
 current=output.read_text();begin='  // BEGIN GENERATED BUILDER METHODS\n';end='  // END GENERATED BUILDER METHODS\n'

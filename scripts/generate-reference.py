@@ -30,14 +30,14 @@ def cases() -> list[dict[str, Any]]:
         name = match[1]
         explicit = {
             "normalize_unicode": ("Ａﬁ²", ["nfkc"]),
-            "define_replace_map": ("cat", ["animals", "cat", "dog"]),
+            "add_replace_rule": ("cat", ["animals", "cat", "dog"]),
             "execute_replace_map": ("cat", ["animals"]),
         }
         if name in explicit:
             input_text, arguments = explicit[name]
             steps = [[name, arguments]]
             if name == "execute_replace_map":
-                steps.insert(0, ["define_replace_map", ["animals", "cat", "dog"]])
+                steps.insert(0, ["add_replace_rule", ["animals", "cat", "dog"]])
             result.append({"name": name, "input": input_text, "steps": steps})
             continue
         if name in {"val", "var", "mut_var", "eval", "iter", "end", "remove_pattern"}:
@@ -115,6 +115,10 @@ def cases() -> list[dict[str, Any]]:
             },
         ]
     )
+    result.append({"name":"define_replace_map", "input":"cat wolf", "steps":[
+        ["define_replace_map",["animals",{"map":[["cat","wolf"],["wolf","dog"]]}]],
+        ["execute_replace_map",["animals"]],
+    ]})
     return result
 
 
@@ -128,6 +132,8 @@ def rust_argument(value: object) -> str:
         raise TypeError(f"Unsupported fixture argument: {value!r}")
     if "variable" in value:
         return f"get_var({rust_argument(value['variable'])})"
+    if "map" in value:
+        return "|map| { " + "".join(f"map.add_replace({rust_argument(a)}, {rust_argument(b)})?; " for a,b in value["map"]) + "map.end() }"
     if "body" in value:
         return "|body| { " + rust_chain(value["body"], "body") + "; Ok(()) }"
     if "instruction" in value:
@@ -202,8 +208,8 @@ def main() -> None:
             "run",
             "--quiet",
             "--locked",
-            "--manifest-path",
-            str(ROOT / "scripts/upstream/Cargo.toml"),
+            "--features",
+            "test-reference",
             "--example",
             "builder_reference",
         ],

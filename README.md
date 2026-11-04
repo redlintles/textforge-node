@@ -63,6 +63,25 @@ const { Pipeline } = require('textforge-node');
 console.log(new Pipeline().normalizeUnicode('nfc').compile().process('e\u0301'));
 ```
 
+Replacement maps use a scoped builder:
+
+```ts
+const plan = new Pipeline()
+  .defineReplaceMap('animals', map => map
+    .addReplace('cat', 'wolf')
+    .addReplace('wolf', 'dog')
+    .end())
+  .executeReplaceMap('animals')
+  .addToEnd('!');
+console.log(plan.compile().process('cat wolf')); // wolf dog!
+```
+
+`end()` closes map configuration; it does not halt the pipeline. The synchronous
+callback runs once and is discarded. Empty or unfinished definitions are rejected;
+failed callbacks leave the original immutable plan untouched. Async callbacks are
+unsupported. The old three-argument `defineReplaceMap` remains available for
+compatibility; new single-rule calls can use `addReplaceRule`. See [API details](docs/api.md).
+
 Fixed option sets have literal union types for editor completion:
 `normalizeUnicode` accepts `'nfc' | 'nfd' | 'nfkc' | 'nfkd' | Variable`, and
 `Observers.setBuiltin` accepts the `BuiltinWatcherMetric` union. Both option types

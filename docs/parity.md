@@ -14,6 +14,7 @@ stale signatures. New methods fail CI until mapping and fixtures are updated.
 | All `TextForgeBuilderMethods` | Explicit typed camelCase methods, mapped to portable instructions |
 | `push_token` | `Pipeline.pushToken(Instruction)` |
 | `get_var` | `getVar`, `Variable` |
+| `define_replace_map`, `ReplaceMapBuilder::add_replace/end` | `defineReplaceMap`, scoped `addReplace/end`; `addReplaceRule` for individual rules |
 | `block_assoc`, `call_block` | `blockAssoc`, `callBlock`; owned subplans |
 | `if_do_contains_each` | `ifDoContainsEach`; owned conditional subplan |
 | `add_transform`, registration | `addTransform`, `register` (plans, compiled pipelines or instruction arrays) |
@@ -32,12 +33,12 @@ Rust trait objects are represented by checked owned instruction descriptions.
 Production code imports only `api::portable`. Optional engine capabilities are
 all enabled; `test_access` is isolated to reference executables.
 
-The builder oracle executes 80 cases against the unmodified published Rust core,
+The builder oracle executes 81 cases against the native public Rust API in the documented patched core,
 covering every fluent method plus blocks and conditionals. The processor oracle
 records 41 results/complete errors from native public methods and portable-only
 operations, including line errors, persistence, watchers and buffered execution.
 Node compares raw stage, code, message, instruction and input, not display strings.
-All 80 builder cases additionally round-trip through text and bytecode files.
+All 81 builder cases additionally round-trip through text and bytecode files.
 Separate tests cover native paths, short reads/writes, callback failures, cleanup,
 consuming failures, reentry and worker isolation. Installed packages run the same
 Node suites with their pinned fixtures. Rust regression tests cover the approved
