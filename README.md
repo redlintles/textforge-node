@@ -1,8 +1,8 @@
 # TextForge for Node.js
 
 Typed Node.js bindings for the TextForge text-transformation DSL. Binding version
-**0.1.0** is based on the published **TextForge 0.2.0** core, using N-API through
-`napi-rs`. Both ESM and CommonJS expose the same camelCase API and share class identities, so
+**0.1.0** (unreleased) is based on the published **TextForge 0.2.0** core, with a
+reviewed patch that tracks core revision `701c5b2`, using N-API through `napi-rs`. Both ESM and CommonJS expose the same camelCase API and share class identities, so
 objects can cross module formats.
 
 All engine operations go through `textforge::api::portable`. The Rust addon is an
@@ -52,9 +52,12 @@ console.log(processor.processAll(id, 'é')); // éé
 
 // External plans and compiled pipelines can both be attached to a processor.
 const externalId = processor.addTransform(pipeline.compile());
-processor.writePipelineToFile(externalId, 'pipelines/example.tft');
-processor.writeToBytecodeFile(externalId, 'pipelines/example.tfb');
+processor.writePipelineToFile(externalId, 'pipelines/example.textforge');
+processor.writeToBytecodeFile(externalId, 'pipelines/example.textforgebc');
 ```
+
+Text pipelines use `.textforge` (aliases `.tft`, `.txf`); bytecode uses
+`.textforgebc` (aliases `.tfb`, `.txb`). See [API details](docs/api.md).
 
 CommonJS:
 
@@ -93,7 +96,8 @@ can be repeated and creates independent executables with fresh execution context
 per call. `Processor` additionally exposes registration, editable instruction
 snapshots, text/bytecode persistence, files, debugging, batches, watchers and
 buffered execution. See the complete [API and lifecycle guide](docs/api.md),
-[builder mapping](docs/builder-parity.json) and [processor mapping](docs/parity.md).
+[parity overview](docs/parity.md), [builder mapping](docs/builder-parity.json) and
+[processor mapping](docs/processor-parity.json).
 
 ## Blocks and instruction descriptions
 
