@@ -22,8 +22,10 @@
 
 ### Export filename compatibility
 
-- Accept `.txf` and `.txb` as additional text/bytecode filename aliases, while
-  preserving `.tft`, `.tfb`, `.textforge` and `.textforgebc` support.
+- Accept the same text/bytecode extensions as the upstream core: `.textforge`
+  and `.tft` for text, `.textforgebc` and `.tfb` for bytecode. The `.txf` and
+  `.txb` aliases added earlier in this cycle were removed before release because
+  the upstream core does not recognize them; a regression test rejects them.
 - Exercise the reported normalization/block/export script against the installed
   tarball, creating both output files without placeholders.
 

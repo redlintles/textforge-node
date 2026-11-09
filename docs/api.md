@@ -72,8 +72,8 @@ which may be edited by constructing new instructions and re-registered through
 source plans remain independent.
 
 Pipeline exports create the destination and any missing parent directories.
-Text paths accept `.textforge`, `.tft` or `.txf`; bytecode imports accept
-`.textforgebc`, `.tfb` or `.txb`. Bytecode exports retain acceptance of the core's recognized pipeline
+Text paths accept `.textforge` or `.tft`; bytecode imports accept
+`.textforgebc` or `.tfb`. Bytecode exports retain acceptance of the core's recognized pipeline
 extensions; use `.tfb` for clarity. Text serialization quotes whitespace, empty
 arguments, quotes and backslashes, including nested instructions. Literal line
 breaks and variable names outside the textual reference grammar require bytecode

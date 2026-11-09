@@ -56,8 +56,8 @@ processor.writePipelineToFile(externalId, 'pipelines/example.textforge');
 processor.writeToBytecodeFile(externalId, 'pipelines/example.textforgebc');
 ```
 
-Text pipelines use `.textforge` (aliases `.tft`, `.txf`); bytecode uses
-`.textforgebc` (aliases `.tfb`, `.txb`). See [API details](docs/api.md).
+Text pipelines use `.textforge` (alias `.tft`); bytecode uses `.textforgebc`
+(alias `.tfb`). See [API details](docs/api.md).
 
 CommonJS:
 

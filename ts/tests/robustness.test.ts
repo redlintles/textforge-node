@@ -49,10 +49,10 @@ test('ESM and CommonJS share class identities and can exchange every object type
 
 test('all write APIs create new destinations and nested parents',t=>{
   const dir=directory(t),processor=new Processor(),id=processor.register(new Pipeline().addToEnd('!'));
-  for(const extension of ['tft','textforge','txf','tfb','textforgebc','txb']){
+  for(const extension of ['tft','textforge','tfb','textforgebc']){
     const destination=join(dir,'nested',extension,'pipeline.'+extension);
     assert.equal(existsSync(destination),false);
-    const binary=['tfb','textforgebc','txb'].includes(extension);
+    const binary=['tfb','textforgebc'].includes(extension);
     if(binary)processor.writeToBytecodeFile(id,pathToFileURL(destination));
     else processor.writePipelineToFile(id,pathToFileURL(destination));
     const restored=binary?processor.readFromBytecodeFile(destination):processor.getPipelineFromFile(destination);
@@ -160,14 +160,14 @@ test('buffer spooling creates the configured storage directory and cleans up fil
 });
 
 
-test('the reported script creates banana.txb and banana.txf without placeholders',t=>{
+test('the reported script creates banana.tfb and banana.tft without placeholders',t=>{
   const dir=directory(t);
   const cp=new Pipeline().trimBothSides().addToBeginning('Banana ').addToEnd('!')
     .blockAssoc('banana',new Pipeline().toReverse().toLowercaseAll().replaceAllWith('a','o'))
     .normalizeUnicode('nfc').callBlock('banana');
   const processor=new Processor();
   const id=processor.register(cp);
-  const binary=join(dir,'banana.txb'),text=join(dir,'banana.txf');
+  const binary=join(dir,'banana.tfb'),text=join(dir,'banana.tft');
   assert.equal(existsSync(binary),false);assert.equal(existsSync(text),false);
   processor.writeToBytecodeFile(id,binary);
   processor.writePipelineToFile(id,text);
@@ -175,6 +175,15 @@ test('the reported script creates banana.txb and banana.txf without placeholders
   assert.equal(processor.processAll(processor.getPipelineFromFile(text),' e\u0301 '),'!é ononob');
   assert.deepEqual([...readFileSync(binary).subarray(0,8)],[38,235,245,8,244,137,1,179]);
   assert.ok(readFileSync(text,'utf8').includes('Banana '));
+});
+
+test('unsupported .txf and .txb extensions are rejected without creating files',t=>{
+  // Regression: these aliases are not recognized by the upstream core.
+  const dir=directory(t),processor=new Processor(),id=processor.register(new Pipeline().addToEnd('!'));
+  const text=join(dir,'rejected','pipeline.txf'),binary=join(dir,'rejected','pipeline.txb');
+  assert.throws(()=>processor.writePipelineToFile(id,text),TextForgeError);
+  assert.throws(()=>processor.writeToBytecodeFile(id,binary),TextForgeError);
+  assert.equal(existsSync(join(dir,'rejected')),false);
 });
 
 test('scoped replacement maps and debug execution preserve ordinary results',t=>{
@@ -190,10 +199,10 @@ test('scoped replacement maps and debug execution preserve ordinary results',t=>
     const id=processor.register(source);
     assert.equal(processor.processAll(id,'Fruit'),expected);
     assert.equal(processor.processAllWithDebug(id,'Fruit'),expected);
-    for(const extension of ['txf','txb']){
+    for(const extension of ['tft','tfb']){
       const path=join(directoryPath,'map.'+extension);
-      if(extension==='txf')processor.writePipelineToFile(id,path);else processor.writeToBytecodeFile(id,path);
-      const restored=extension==='txf'?processor.getPipelineFromFile(path):processor.readFromBytecodeFile(path);
+      if(extension==='tft')processor.writePipelineToFile(id,path);else processor.writeToBytecodeFile(id,path);
+      const restored=extension==='tft'?processor.getPipelineFromFile(path):processor.readFromBytecodeFile(path);
       assert.equal(processor.processAllWithDebug(restored,'Fruit'),expected);
     }
   }

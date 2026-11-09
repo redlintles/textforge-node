@@ -41,11 +41,11 @@ fn registered() -> (PortableProcessor, String) {
 fn text_and_bytecode_exports_create_new_files_and_parent_directories() {
     let directory = Directory::new();
     let (mut processor, id) = registered();
-    for extension in ["textforge", "tft", "txf", "textforgebc", "tfb", "txb"] {
+    for extension in ["textforge", "tft", "textforgebc", "tfb"] {
         let filename = format!("nested/{extension}/pipeline.{extension}");
         let path = directory.path(&filename);
         assert!(!directory.0.join(&filename).exists());
-        let restored = if matches!(extension, "textforge" | "tft" | "txf") {
+        let restored = if matches!(extension, "textforge" | "tft") {
             processor.write_pipeline_to_file(&id, &path).unwrap();
             processor.get_pipeline_from_file(&path).unwrap()
         } else {
@@ -53,6 +53,25 @@ fn text_and_bytecode_exports_create_new_files_and_parent_directories() {
             processor.read_from_bytecode_file(&path).unwrap()
         };
         assert_eq!(processor.process_all(&restored, "é").unwrap(), "é🍌");
+    }
+}
+
+#[test]
+fn unsupported_txf_and_txb_extensions_are_rejected_without_creating_files() {
+    // Regression: the bundled core briefly accepted `.txf`/`.txb`, which the
+    // upstream core does not recognize. Keep the binding aligned with upstream.
+    let directory = Directory::new();
+    let (mut processor, id) = registered();
+    for (extension, binary) in [("txf", false), ("txb", true)] {
+        let filename = format!("rejected/pipeline.{extension}");
+        let path = directory.path(&filename);
+        let result = if binary {
+            processor.write_to_bytecode_file(&id, &path)
+        } else {
+            processor.write_pipeline_to_file(&id, &path)
+        };
+        assert!(result.is_err(), "{extension} must be rejected");
+        assert!(!directory.0.join("rejected").exists());
     }
 }
 

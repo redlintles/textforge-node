@@ -47,10 +47,10 @@ for(const source of [plan,plan.compile()]) {
   const id=processor.register(source);
   assert.equal(processor.processAll(id,' é '),'!é xnxnxb');
   assert.equal(processor.processAllWithDebug(id,' é '),'!é xnxnxb');
-  processor.writePipelineToFile(id,'new folder/banana.txf');
-  processor.writeToBytecodeFile(id,'new folder/banana.txb');
-  assert.equal(processor.processAll(processor.getPipelineFromFile('new folder/banana.txf'),' é '),'!é xnxnxb');
-  assert.equal(processor.processAll(processor.readFromBytecodeFile('new folder/banana.txb'),' é '),'!é xnxnxb');
+  processor.writePipelineToFile(id,'new folder/banana.tft');
+  processor.writeToBytecodeFile(id,'new folder/banana.tfb');
+  assert.equal(processor.processAll(processor.getPipelineFromFile('new folder/banana.tft'),' é '),'!é xnxnxb');
+  assert.equal(processor.processAll(processor.readFromBytecodeFile('new folder/banana.tfb'),' é '),'!é xnxnxb');
 }
 `;
   writeFileSync(join(consumer,'smoke.mjs'),smoke);
