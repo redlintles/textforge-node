@@ -8,3 +8,4 @@
 /vendor/textforge/target/
 /vendor/textforge/Cargo.lock
 /scripts/upstream/target/
+.npmrc
