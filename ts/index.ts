@@ -1,4 +1,4 @@
-/** Typed, owned Node.js interface to TextForge 0.2.0. */
+/** Typed, owned Node.js interface to TextForge 0.4.0. */
 import native from './loader.cjs';
 import type {NativeArgument} from './native-types.js';
 import type {BuiltinWatcherMetric, ExecutionProfileName, NormalizationMode} from './options.js';
@@ -728,5 +728,5 @@ export class Processor {
       .map(r => r.error ? new TextForgeError(r.error) : new PortableBuffer(r.buffer!));
   }
 }
-export const version = '0.1.0';
-export const coreVersion = '0.2.0';
+export const version = '0.2.0';
+export const coreVersion = '0.4.0';
