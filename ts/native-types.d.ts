@@ -170,6 +170,10 @@ export declare class PortableBuffer {
 export declare class Processor {
   constructor()
   register(plan: Plan): string
+  setProfile(profile: NativeProfile): void
+  profile(): NativeProfile
+  setPipelineName(id: string, name: string): void
+  pipelineName(id: string): string
   addTransform(instructions: Array<Instruction>): string
   getTransformVec(id: string): Array<Instruction>
   removeTransform(id: string): void
@@ -342,6 +346,21 @@ export interface NativeArgument {
 }
 
 /**
+ * Plain `ExecutionProfile` values; `null` limits are unlimited.
+ *
+ * ```
+ * use textforge::api::ExecutionProfile;
+ * assert_eq!(ExecutionProfile::preset("low-memory")?.spool_threshold, 64 * 1024);
+ * # Ok::<(), textforge::utils::errors::TextForgeError>(())
+ * ```
+ */
+export interface NativeProfile {
+  spoolThreshold: bigint
+  maxGeneratedBytes: bigint | null
+  maxIterations: bigint | null
+}
+
+/**
  * Owned regex/replacement pair used only by the adapter's map transport.
  *
  * ```
@@ -373,6 +392,12 @@ export interface Observation {
   after?: string
   instruction: string
 }
+
+/**
+ * Values of the core preset `balanced`, `low-memory` or `fast`.
+ * JavaScript: `ExecutionProfile.preset('fast')`.
+ */
+export declare function profilePreset(name: string): NativeProfile
 
 /**
  * One instruction an error left, outermost first (`TextForgeError.trace`).

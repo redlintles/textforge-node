@@ -32,7 +32,7 @@ test('registration accepts external plans, compiled plans and instruction snapsh
 });
 
 test('ESM and CommonJS share class identities and can exchange every object type',t=>{
-  for(const name of ['Pipeline','CompiledPipeline','Instruction','Variable','Processor','FilePath','Observers','PortableBuffer','BufferOptions','BatchPool'] as const)
+  for(const name of ['Pipeline','CompiledPipeline','Instruction','Variable','Processor','FilePath','Observers','PortableBuffer','BufferOptions','BatchPool','ExecutionProfile'] as const)
     assert.equal(api[name],cjs[name],name);
   const plan=new Pipeline(new cjs.Instruction('atb','🍌')).var('n','2').repeat(new cjs.Variable('n'));
   const processor=new cjs.Processor();const id=processor.register(plan.compile());

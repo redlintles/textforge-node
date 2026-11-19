@@ -19,3 +19,6 @@ export type BuiltinWatcherMetric =
   | 'uppercase_count'
   | 'lowercase_count'
   | 'unique_char_count';
+
+/** Names of the core execution-profile presets. */
+export type ExecutionProfileName = 'balanced' | 'low-memory' | 'fast';

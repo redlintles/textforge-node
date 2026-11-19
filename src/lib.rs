@@ -9,7 +9,7 @@
 //! ```
 mod buffers;
 pub mod paths;
-mod processor;
+pub mod processor;
 mod watchers;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;

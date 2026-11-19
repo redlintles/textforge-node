@@ -1,8 +1,8 @@
 /** Typed, owned Node.js interface to TextForge 0.2.0. */
 import native from './loader.cjs';
 import type {NativeArgument} from './native-types.js';
-import type {BuiltinWatcherMetric, NormalizationMode} from './options.js';
-export type {BuiltinWatcherMetric, NormalizationMode} from './options.js';
+import type {BuiltinWatcherMetric, ExecutionProfileName, NormalizationMode} from './options.js';
+export type {BuiltinWatcherMetric, ExecutionProfileName, NormalizationMode} from './options.js';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -568,6 +568,59 @@ function singleInstruction(value: Instruction | Pipeline): InstanceType<typeof n
   if (!(value instanceof Instruction)) throw new TypeError('expected an Instruction or a single-instruction Pipeline');
   return value.toNative();
 }
+function limit(value: Integer | null): bigint | null { return value === null ? null : integer(value); }
+/** Settings accepted by `new ExecutionProfile(...)`; `null` limits are unlimited. */
+export interface ExecutionProfileSettings {
+  spoolThreshold: Integer;
+  maxGeneratedBytes?: Integer | null;
+  maxIterations?: Integer | null;
+}
+/**
+ * How the engine spends memory and where it stops runaway work; results never change.
+ * Mirrors Rust `textforge::api::ExecutionProfile` and its `Limits`. `spoolThreshold` is
+ * the size, in bytes, above which buffered processing keeps a document on disk.
+ * `maxGeneratedBytes` bounds the text `rpt`, `padl` and `padr` produce and
+ * `maxIterations` the `iter` count; `null` means unlimited. Past a limit an instruction
+ * fails with a `LimitExceededError` (code 31), which `tryIgnore` never ignores.
+ */
+export class ExecutionProfile {
+  readonly spoolThreshold: bigint;
+  readonly maxGeneratedBytes: bigint | null;
+  readonly maxIterations: bigint | null;
+  /** Omitted limits take the core defaults: 2 GiB and 10,000,000 iterations. */
+  constructor({spoolThreshold, maxGeneratedBytes = 2n * 1024n ** 3n, maxIterations = 10_000_000n}: ExecutionProfileSettings) {
+    this.spoolThreshold = integer(spoolThreshold);
+    this.maxGeneratedBytes = limit(maxGeneratedBytes);
+    this.maxIterations = limit(maxIterations);
+    Object.freeze(this);
+  }
+  /** The core preset `balanced`, `low-memory` or `fast`. */
+  static preset(name: ExecutionProfileName): ExecutionProfile { return ExecutionProfile.fromNative(native.profilePreset(text(name))); }
+  /** The default: documents above 1 MiB are spooled. */
+  static balanced(): ExecutionProfile { return ExecutionProfile.preset('balanced'); }
+  /** Spool documents to disk early (64 KiB). */
+  static lowMemory(): ExecutionProfile { return ExecutionProfile.preset('low-memory'); }
+  /** Keep documents in memory up to 256 MiB. */
+  static fast(): ExecutionProfile { return ExecutionProfile.preset('fast'); }
+  /** A copy with both safety limits replaced (`null` is unlimited). */
+  withLimits(limits: {maxGeneratedBytes: Integer | null; maxIterations: Integer | null}): ExecutionProfile {
+    return new ExecutionProfile({spoolThreshold:this.spoolThreshold, ...limits});
+  }
+  /** A copy without safety limits, like Rust `Limits::unlimited()`. */
+  unlimited(): ExecutionProfile { return this.withLimits({maxGeneratedBytes:null, maxIterations:null}); }
+  equals(other: ExecutionProfile): boolean {
+    return other instanceof ExecutionProfile && other.spoolThreshold === this.spoolThreshold
+      && other.maxGeneratedBytes === this.maxGeneratedBytes && other.maxIterations === this.maxIterations;
+  }
+  /** @internal */
+  static fromNative(value: {spoolThreshold: bigint; maxGeneratedBytes: bigint | null; maxIterations: bigint | null}): ExecutionProfile {
+    return new ExecutionProfile(value);
+  }
+  /** @internal */
+  toNative(): {spoolThreshold: bigint; maxGeneratedBytes: bigint | null; maxIterations: bigint | null} {
+    return {spoolThreshold:this.spoolThreshold, maxGeneratedBytes:this.maxGeneratedBytes, maxIterations:this.maxIterations};
+  }
+}
 /** Complete processor facade. All calls execute synchronously on the calling Node thread. */
 export class Processor {
   private readonly inner = new native.Processor();
@@ -578,6 +631,22 @@ export class Processor {
     if (source instanceof Pipeline || source instanceof CompiledPipeline) return this.inner.register(source.lower());
     throw new TypeError('register expects a Pipeline, CompiledPipeline, or array of Instruction objects; build() returns an ID that is already registered');
   }
+  /** Use `profile` for later runs (`ExecutionProfile.balanced()` by default); results never change. */
+  setProfile(profile: ExecutionProfile): void {
+    if (!(profile instanceof ExecutionProfile)) throw new TypeError('setProfile requires an ExecutionProfile');
+    this.inner.setProfile(profile.toNative());
+  }
+  /** Fluent form of `setProfile`, like Rust `with_profile`: `new Processor().withProfile(ExecutionProfile.fast())`. */
+  withProfile(profile: ExecutionProfile): this { this.setProfile(profile); return this; }
+  /** The profile in use. */
+  profile(): ExecutionProfile { return ExecutionProfile.fromNative(this.inner.profile()); }
+  /**
+   * Set the name a registered pipeline reads as `{{__PIPELINE_NAME__}}`. A pipeline is
+   * named after its identifier, or after its file when read from one.
+   */
+  setPipelineName(id: string, name: string): void { this.inner.setPipelineName(text(id),text(name)); }
+  /** The name a registered pipeline reads as `__PIPELINE_NAME__`. */
+  pipelineName(id: string): string { return this.inner.pipelineName(text(id)); }
   /** Register an externally constructed pipeline or an array of instructions. */
   addTransform(source: PipelineSource): string { return this.register(source); }
   removeTransform(id: string): void { this.inner.removeTransform(text(id)); }

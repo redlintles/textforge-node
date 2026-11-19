@@ -20,6 +20,7 @@ use crate::buffers::{BufferOptions, PortableBuffer};
 use crate::paths::{BatchPool, FilePath};
 use crate::watchers::Observers;
 use crate::*;
+use textforge::api::{ExecutionProfile, Limits};
 /// File batch request. Example: `{input, pipelineId: id, output}`.
 ///
 /// ```
@@ -100,6 +101,51 @@ fn tasks(values: Vec<FileTask>) -> Vec<p::FileTask> {
         })
         .collect()
 }
+/// Plain `ExecutionProfile` values; `null` limits are unlimited.
+///
+/// ```
+/// use textforge::api::ExecutionProfile;
+/// assert_eq!(ExecutionProfile::preset("low-memory")?.spool_threshold, 64 * 1024);
+/// # Ok::<(), textforge::utils::errors::TextForgeError>(())
+/// ```
+#[napi(object, use_nullable = true)]
+pub struct NativeProfile {
+    pub spool_threshold: BigInt,
+    pub max_generated_bytes: Option<BigInt>,
+    pub max_iterations: Option<BigInt>,
+}
+impl From<ExecutionProfile> for NativeProfile {
+    fn from(profile: ExecutionProfile) -> Self {
+        Self {
+            spool_threshold: (profile.spool_threshold as u64).into(),
+            max_generated_bytes: profile.limits.max_generated_bytes.map(BigInt::from),
+            max_iterations: profile.limits.max_iterations.map(BigInt::from),
+        }
+    }
+}
+impl TryFrom<NativeProfile> for ExecutionProfile {
+    type Error = napi::Error;
+    fn try_from(profile: NativeProfile) -> Result<Self> {
+        let spool_threshold = usize::try_from(number(profile.spool_threshold)?).map_err(|_| {
+            napi::Error::from_reason("spoolThreshold is too large for this platform")
+        })?;
+        Ok(ExecutionProfile {
+            spool_threshold,
+            limits: Limits {
+                max_generated_bytes: profile.max_generated_bytes.map(number).transpose()?,
+                max_iterations: profile.max_iterations.map(number).transpose()?,
+            },
+        })
+    }
+}
+/// Values of the core preset `balanced`, `low-memory` or `fast`.
+/// JavaScript: `ExecutionProfile.preset('fast')`.
+#[napi]
+pub fn profile_preset(name: String) -> Result<NativeProfile> {
+    ExecutionProfile::preset(&name)
+        .map(NativeProfile::from)
+        .map_err(|e| napi::Error::from_reason(e.error_code.message().to_string()))
+}
 /// Full portable processor. Example: `processor.register(plan)`.
 ///
 /// ```
@@ -123,6 +169,25 @@ impl Processor {
     #[napi]
     pub fn register(&mut self, env: Env, plan: &Plan) -> Result<String> {
         self.inner.register(&plan.inner).map_err(|e| error(env, e))
+    }
+    #[napi]
+    pub fn set_profile(&mut self, profile: NativeProfile) -> Result<()> {
+        self.inner.set_profile(profile.try_into()?);
+        Ok(())
+    }
+    #[napi]
+    pub fn profile(&self) -> NativeProfile {
+        self.inner.profile().into()
+    }
+    #[napi]
+    pub fn set_pipeline_name(&mut self, env: Env, id: String, name: String) -> Result<()> {
+        self.inner
+            .set_pipeline_name(&id, name)
+            .map_err(|e| error(env, e))
+    }
+    #[napi]
+    pub fn pipeline_name(&self, env: Env, id: String) -> Result<String> {
+        self.inner.pipeline_name(&id).map_err(|e| error(env, e))
     }
     #[napi]
     pub fn add_transform(
