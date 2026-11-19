@@ -65,6 +65,6 @@ test('pipelineJoin runs a pipeline file and survives both persistence formats', 
     processor[write](id,file);
     assert.equal(processor.processAll(processor[read](file),'abc'),'abc! joined');
   }
-  // A missing joined file is reported when the plan is registered or compiled.
+  // A processor reads the joined file when the plan is registered.
   assert.throws(() => processor.register(new Pipeline().pipelineJoin(join(dir,'missing.tft'))),TextForgeError);
 });

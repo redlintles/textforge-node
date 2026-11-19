@@ -1,21 +1,23 @@
 # TextForge for Node.js
 
 Typed Node.js bindings for the TextForge text-transformation DSL. Binding version
-**0.1.0** (unreleased) is based on the published **TextForge 0.2.0** core, with a
-reviewed patch that tracks core revision `701c5b2`, using N-API through `napi-rs`. Both ESM and CommonJS expose the same camelCase API and share class identities, so
+**0.2.0** (unreleased) bundles the published **TextForge 0.4.0** core
+(revision `6407329`) without modifications, using N-API through `napi-rs`. Both
+ESM and CommonJS expose the same camelCase API and share class identities, so
 objects can cross module formats.
 
 All engine operations go through `textforge::api::portable`. The Rust addon is an
 adapter; TypeScript provides the immutable fluent builder, public types and docs.
-The bundled core includes documented corrections for numeric assignments,
-persistence, output paths and registry-consistent bytecode opcodes. See [core provenance](docs/core.md) and the reviewable
-[patch](docs/core-0.2.0.patch).
+See [core provenance](docs/core.md). Upgrading from 0.1.0? Read the
+**Behavior changes** in the [changelog](Changelog.md) first: line numbers now
+count from 0, and exports no longer create missing parent directories.
 
 ## Build and try
 
 Requires Node.js 22 or later, npm, and a Rust toolchain capable of building the
-locked dependencies. CI uses Rust stable; this checkout was tested with Rust
-1.99.1 and Node.js 24.14.1 on Linux x64 with glibc. Native linking requires the
+locked dependencies (the core declares Rust 1.89 as its minimum). CI uses Rust
+stable; this release was tested with Rust 1.97.0 and Node.js 22.23 on Linux x64
+with glibc. Native linking requires the
 usual platform C/C++ build tools. No browser runtime is supported.
 
 ```sh
@@ -51,13 +53,15 @@ const id = processor.createPipeline().val('n', 2).repeat(getVar('n')).build();
 console.log(processor.processAll(id, 'é')); // éé
 
 // External plans and compiled pipelines can both be attached to a processor.
+// The destination directory must exist; the file itself is created.
 const externalId = processor.addTransform(pipeline.compile());
 processor.writePipelineToFile(externalId, 'pipelines/example.textforge');
 processor.writeToBytecodeFile(externalId, 'pipelines/example.textforgebc');
 ```
 
 Text pipelines use `.textforge` (alias `.tft`); bytecode uses `.textforgebc`
-(alias `.tfb`). See [API details](docs/api.md).
+(alias `.tfb`). Line breaks and tabs in parameters round-trip through both
+formats. See [API details](docs/api.md).
 
 CommonJS:
 
@@ -86,10 +90,11 @@ unsupported. The old three-argument `defineReplaceMap` remains available for
 compatibility; new single-rule calls can use `addReplaceRule`. See [API details](docs/api.md).
 
 Fixed option sets have literal union types for editor completion:
-`normalizeUnicode` accepts `'nfc' | 'nfd' | 'nfkc' | 'nfkd' | Variable`, and
-`Observers.setBuiltin` accepts the `BuiltinWatcherMetric` union. Both option types
-are exported as `NormalizationMode` and `BuiltinWatcherMetric` for TypeScript
-consumers. Context references remain supported through `getVar`.
+`normalizeUnicode` accepts `'nfc' | 'nfd' | 'nfkc' | 'nfkd' | Variable`,
+`Observers.setBuiltin` accepts the `BuiltinWatcherMetric` union and
+`ExecutionProfile.preset` the `ExecutionProfileName` union. The option types are
+exported as `NormalizationMode`, `BuiltinWatcherMetric` and
+`ExecutionProfileName` for TypeScript consumers. Context references remain supported through `getVar`.
 
 Every fluent edit returns a **new** plan. Keep the returned value. Compilation
 can be repeated and creates independent executables with fresh execution context
@@ -98,6 +103,59 @@ snapshots, text/bytecode persistence, files, debugging, batches, watchers and
 buffered execution. See the complete [API and lifecycle guide](docs/api.md),
 [parity overview](docs/parity.md), [builder mapping](docs/builder-parity.json) and
 [processor mapping](docs/processor-parity.json).
+
+## Skipping failures, sections and files (TextForge 0.3/0.4)
+
+```ts
+import { Pipeline } from 'textforge-node';
+
+const plan = new Pipeline()
+  .tryIgnore(new Pipeline().deleteSingle(9))          // skipped if it fails
+  .onLine('[[__LINES__ - 1]]', new Pipeline().toUppercaseAll())
+  .onChunk(0, 1, new Pipeline().addToBeginning('> '));
+console.log(plan.compile().process('ab\ncd')); // > ab\nCD
+```
+
+`tryIgnore(inner)` runs one instruction and, when it fails, leaves no trace of
+it: text, variables, blocks and maps are as before. Safety limits are never
+ignored. `onLine`, `onChunk` and `onLineInterval` apply one instruction to a
+line, a character range or a line interval. Each takes an `Instruction` or a
+single-instruction `Pipeline`. Numeric parameters also accept a `[[ ]]`
+expression or `{{ }}` template as text; the engine resolves it when the
+instruction runs. **Lines, like characters and words, count from 0.**
+
+`pipelineJoin(path)` runs another pipeline file; `writeToFile`, `appendFile`,
+`prependFile` and `insertFile(index, path)` write or read files while the
+pipeline runs. Relative paths start from the pipeline file's directory, or the
+working directory for plans built in code.
+
+## Errors, profiles and pipeline names
+
+```ts
+import { ExecutionProfile, Pipeline, Processor, TextForgeError } from 'textforge-node';
+
+try {
+  new Pipeline().deleteSingle(9).compile().process('abc');
+} catch (error) {
+  if (error instanceof TextForgeError) {
+    console.log(error.kind);                // IndexOutOfRange
+    console.log(error.parameters[0]);       // { name: 'index', value: '9', written: null }
+    console.error(error.report);            // the report the txf program prints
+  }
+}
+
+const processor = new Processor().withProfile(ExecutionProfile.lowMemory());
+const id = processor.register(new Pipeline().addToEnd(' by {{__PIPELINE_NAME__}}'));
+processor.setPipelineName(id, 'cleanup');
+console.log(processor.processAll(id, 'done')); // done by cleanup
+```
+
+Since TextForge 0.4.0 an error carries `kind` (the stable name of its code),
+`trace` (outermost first), `parameters`, `cause`, `hint`, `ignorable` and the
+plain `report`. Read the fields: the report layout may change. An
+`ExecutionProfile` sets the spool threshold and the safety limits
+(`maxGeneratedBytes`, `maxIterations`; `null` is unlimited); past a limit an
+instruction fails with code 31. Profiles never change results.
 
 ## Blocks and instruction descriptions
 
@@ -152,7 +210,9 @@ objects, and close buffers/pools when their resources are no longer needed.
 ## Errors and exact conversions
 
 `TextForgeError` is an `Error` with `stage`, numeric `code`, `message`,
-`instruction` and `input`, preserving portable diagnostics. Catch it with
+`instruction` and `input`, plus the 0.4.0 details (`kind`, `trace`,
+`parameters`, `cause`, `hint`, `ignorable`, `report`), preserving portable
+diagnostics. Catch it with
 `error instanceof TextForgeError`. Batch methods return an error per failed task
 instead of discarding other results. JavaScript boundary type/range violations
 raise `TypeError` or `RangeError`.

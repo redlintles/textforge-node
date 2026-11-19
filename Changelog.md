@@ -1,6 +1,73 @@
 # Changelog
 
-## 0.1.0 — Unreleased
+## 0.2.0 — Unreleased
+
+Moves the bundled core from TextForge 0.2.0 straight to the published **0.4.0**
+(core 0.3.x was never bundled). The engine is now unmodified.
+
+### Behavior changes
+
+Read these before upgrading; they come from the core.
+
+- **Line numbers count from 0** (core 0.3.2), like characters and words:
+  `deleteLine`, `deleteLinesAfter`, `deleteLinesBefore`, `deleteLinesInterval`,
+  `selectLines`, `insertLine`, `replaceLine` and the new `onLine` and
+  `onLineInterval`. Subtract one from each line number in existing code, text
+  pipelines and bytecode. Line ranges clamp an end past the last line.
+- **Exports no longer create missing parent directories.** Binding 0.1.0
+  patched its core to create them; 0.4.0 creates the file only. A missing
+  directory is a `persistence` error for `writePipelineToFile`,
+  `writeToBytecodeFile`, watcher reports, `PortableBuffer.writeToFile` and the
+  spill directory of `BufferOptions`. `processFile` and the batches still
+  create the output's parents.
+- **Line breaks round-trip through `.textforge` files** (core 0.3.1): they are
+  written as `\n`, `\t`, `\r`, `\0` escapes inside double quotes. Exporting such a
+  pipeline as text used to fail; inside double quotes in a hand-written
+  `.textforge` file, these escapes are now control characters.
+- `writeToBytecodeFile` requires a bytecode extension (`.textforgebc`, `.tfb`).
+- **Safety limits**: `rpt`, `padl`, `padr` and `iter` stop at 2 GiB of output
+  and 10,000,000 iterations by default, with code 31 (`LimitExceededError`).
+  Raise or remove them with an `ExecutionProfile`.
+- Error messages are rewritten in English with the offending value and a
+  suggested fix (core 0.3.1); match `code` or `kind`, not the text.
+- Interpolation keeps stray `{{`, `}}`, `[[`, `]]` that form no variable read or
+  expression; `end` inside a block or `iter` stops only that block or loop; a
+  `val` cannot be defined twice; expression results must be integers or text
+  (core 0.3.2). See the core changelog for the complete list.
+- `val`, `var` and `mutVar` send integer values as their decimal text, as the
+  Rust builder does: the portable slot takes text. `getTransformVec` shows
+  `'2'` for `val('n', 2)`, as before.
+
+### Added
+
+- `tryIgnore(inner)` (`tryi`): run one instruction and skip it, leaving no
+  trace, when it fails. Safety limits are never ignored.
+- `onLine`, `onChunk`, `onLineInterval` (`onln`, `onck`, `onlni`): apply one
+  instruction to a line, a character range or a line interval.
+- `pipelineJoin`, `writeToFile`, `appendFile`, `prependFile`, `insertFile`
+  (`ppjn`, `wtf`, `apf`, `ppf`, `inf`).
+- Numeric parameters accept `[[ ]]` expressions and `{{ }}` templates as text,
+  and pipelines can read the built-in variables (`__LINES__`,
+  `__LEN_CHARS__`, `__COUNTER__`, `__PIPELINE_NAME__`, …).
+- `TextForgeError` (and batch errors) gain `kind`, `trace`, `parameters`,
+  `cause`, `hint`, `ignorable` and `report`; `TraceFrame`, `ErrorParameter`
+  and `TextForgeErrorData` types.
+- `ExecutionProfile` with the `balanced`, `lowMemory` and `fast` presets,
+  `withLimits` and `unlimited`; `Processor.setProfile`, `withProfile`,
+  `profile`; the `ExecutionProfileName` type.
+- `Processor.setPipelineName` and `pipelineName`.
+
+### Maintenance
+
+- The core snapshot is the crates.io crate file for file, with a derived
+  library-only manifest; `scripts/check-core.py` verifies it and regenerates
+  the hashes with `--update`. `docs/core-0.2.0.patch` is removed.
+- Both Rust oracles are regenerated from 0.4.0: 90 builder cases (nested
+  instructions as Rust trait objects, error kinds) and 52 processor cases
+  comparing every error field. The installed-package check exercises the new
+  surface in ESM, CommonJS and both TypeScript module kinds.
+
+## 0.1.0 — 2026-11-10
 
 ### Documentation
 

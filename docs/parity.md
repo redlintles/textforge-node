@@ -13,6 +13,8 @@ stale signatures. New methods fail CI until mapping and fixtures are updated.
 | `create_pipeline`, builder `build` | `createPipeline()`, immutable `Pipeline.build()` |
 | All `TextForgeBuilderMethods` | Explicit typed camelCase methods, mapped to portable instructions |
 | `push_token` | `Pipeline.pushToken(Instruction)` |
+| `try_ignore`, `on_line`, `on_chunk`, `on_line_interval` (0.3/0.4) | `tryIgnore`, `onLine`, `onChunk`, `onLineInterval`; `Instruction` or single-instruction `Pipeline` for `impl Into<TokenWrapper>` |
+| `pipeline_join`, `write_to_file`, `append_file`, `prepend_file`, `insert_file` (0.3) | `pipelineJoin`, `writeToFile`, `appendFile`, `prependFile`, `insertFile` |
 | `get_var` | `getVar`, `Variable` |
 | `define_replace_map`, `ReplaceMapBuilder::add_replace/end` | `defineReplaceMap`, scoped `addReplace/end`; `addReplaceRule` for individual rules |
 | `block_assoc`, `call_block` | `blockAssoc`, `callBlock`; owned subplans |
@@ -27,24 +29,34 @@ stale signatures. New methods fail CI until mapping and fixtures are updated.
 | UTF-8 spool and reader/writer hooks | `PortableBuffer`, `BufferOptions`, `StreamReader`, `StreamWriter` |
 | Buffered pipeline/single/file/batch | `processAllBuffered`, `processSingleBuffered`, `processFileBuffered`, `processBatchBuffered` |
 | Native paths and feature discovery | `FilePath`, `features()` |
+| `with_profile`, `set_profile`, `profile`, `ExecutionProfile`, `Limits` (0.3) | `withProfile`, `setProfile`, `profile`, `ExecutionProfile` |
+| `set_pipeline_name`, `pipeline_name` (0.3) | `setPipelineName`, `pipelineName` |
+| `BindingError::details` (0.4) | `TextForgeError.kind`, `trace`, `parameters`, `cause`, `hint`, `ignorable`, `report` |
 
 This is functional parity with JavaScript ownership and value types. Public
 Rust trait objects are represented by checked owned instruction descriptions.
 Production code imports only `api::portable`. Optional engine capabilities are
 all enabled; `test_access` is isolated to reference executables.
 
-The builder oracle executes 81 cases against the native public Rust API in the documented patched core,
-covering every fluent method plus blocks and conditionals. The processor oracle
-records 41 results/complete errors from native public methods and portable-only
-operations, including line errors, persistence, watchers and buffered execution.
-Node compares raw stage, code, message, instruction and input, not display strings.
-All 81 builder cases additionally round-trip through text and bytecode files.
+The builder oracle executes 90 cases against the native public Rust API of the
+unmodified 0.4.0 core, covering every fluent method except the five file
+builders, plus blocks, conditionals and nested `impl Into<TokenWrapper>` cases
+built as Rust trait objects (including a safety limit `try_ignore` does not
+ignore). Error cases compare the code and its kind. The file builders read and
+write real files in `ts/tests/instructions.test.ts`; `scripts/check-parity.py`
+requires both. The processor oracle records 52 results and complete errors from
+native public methods and portable-only operations, including 0-based line
+errors, persistence, watchers, buffered execution, error details, a profile
+limit and pipeline names. Node compares stage, code, message, instruction,
+input, kind, cause, hint, ignorable and the uncolored report. Every successful
+builder case additionally round-trips through text and bytecode files.
 Separate tests cover native paths, short reads/writes, callback failures, cleanup,
 consuming failures, reentry and worker isolation. Installed packages run the same
-Node suites with their pinned fixtures. Rust regression tests cover the approved
-portable numeric-assignment correction.
+Node suites with their pinned fixtures. A Rust test documents the portable
+`val`/`var`/`mutv` contract the adapter relies on.
 
 There are no intentionally omitted methods in these public builder/processor
-surfaces. The core's own constraints remain visible, including synchronous stream
+surfaces. `ExecutionProfile::from_rc_file` (`.txfrc`) belongs to the `txf`
+program, not to the processor, and is not exposed. The core's own constraints remain visible, including synchronous stream
 hooks, implemented watcher scheduling windows, canonical file formats and
 experimental buffering semantics. These are described in [the API guide](api.md).

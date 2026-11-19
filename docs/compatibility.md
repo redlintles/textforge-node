@@ -2,11 +2,11 @@
 
 | Component | Supported baseline | Evidence |
 | --- | --- | --- |
-| Binding | 0.1.0 | Local build and tests |
-| Core | Published 0.2.0, revision c2ed4b8f4c96c9e3ddc53576a3cdbf6ccd38bc9e, documented scoped-map API, debug, numeric and persistence corrections | Hash manifest, patch and independent public-Rust oracles |
-| Node.js | 22 and 24 | CI matrix; local execution on 24.14.1 |
+| Binding | 0.2.0 (unreleased; 0.1.0 is published) | Local build and tests |
+| Core | Published 0.4.0, revision 6407329777e5d3c3875e8695ebc2b683f4d4f9e1, unmodified | Hash manifest checked against the crates.io crate, independent public-Rust oracles |
+| Node.js | 22 and 24 | CI matrix; local execution on 22.23.5 |
 | N-API | Version 8 | Addon build configuration |
-| Rust | Stable, edition 2024; dependencies locked | CI stable; local 1.99.1; no lower MSRV claim |
+| Rust | Stable, edition 2024; dependencies locked | CI stable; local 1.97.0. The core declares 1.89; the adapter makes no lower MSRV claim |
 | Linux x64, glibc | Supported CI target | Locally verified |
 | Windows x64, MSVC | Supported CI target | Workflow configured; execution unverified in this checkout |
 | macOS arm64 | Supported CI target | Workflow configured; execution unverified in this checkout |
@@ -42,6 +42,6 @@ it also rebuilds a source archive on Linux Node 24. Remote CI status is not
 claimed until that workflow has actually run. Artifact upload in CI is for
 inspection; no npm/crates.io publication is configured.
 
-The scoped replacement-map API and debug fixes track core commit `701c5b2ecbc39dd3f777843c763b6b96a41d70d5`.
-`vendor/CORE_REVISION` identifies the published 0.2.0 base; source hashes pin
-the reviewed additions to that base. Package versions remain unchanged.
+`vendor/CORE_REVISION` identifies the published 0.4.0 crate; source hashes pin
+every bundled file to it. No binding release bundled core 0.3.x: binding 0.2.0 moves
+from core 0.2.0 straight to 0.4.0.
