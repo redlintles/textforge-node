@@ -77,6 +77,13 @@ like character and word indices, count from 0 (TextForge 0.3.2).
 | `appendFile(path)` / `prependFile(path)` | `apf` / `ppf` | Adds a file's content at the end or the beginning. |
 | `insertFile(index, path)` | `inf` | Inserts a file's content at a character index (0 inserts at the start). |
 
+Nested instructions allow **one level**: the instruction given to `tryIgnore`,
+`iter`, `onLine`, `onChunk` or `onLineInterval` cannot itself contain a nested
+instruction (`tryIgnore(iter(...))` is a `validation` error, code 20). Blocks
+are not nesting: a block may use `tryIgnore`, and every `callBlock` runs it
+again. Sections index Unicode scalar values (a combining mark is its own
+character) and keep `\r\n` line terminators.
+
 Relative file paths start from the directory of the pipeline file, or from the
 working directory for plans built in code. The pipeline itself can read the
 built-in variables of the execution context, such as `__LINES__`,
@@ -230,6 +237,11 @@ The adapter never parses terminal-formatted engine error text. Boundary type,
 Unicode, numeric and closed-resource errors use normal JavaScript exceptions.
 `features()` reports enabled production features; `version` and `coreVersion`
 identify the binding and core base version.
+
+Every call crosses the N-API boundary synchronously and copies its strings
+(UTF-16 to UTF-8 and back). The checks at the boundary are linear and cheap
+(`String.prototype.isWellFormed` for strings). See [benchmarks](benchmarks.md)
+for what that costs and when file-based methods avoid it.
 
 ## Replacement-map configuration
 

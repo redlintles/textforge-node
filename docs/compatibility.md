@@ -13,6 +13,7 @@
 | Bytecode / watchers / buffered | All enabled in production | Capability and native integration tests |
 | `test_access` | Test oracles only | Production feature tree excludes it |
 | ESM / CommonJS | Same named API, separate declarations | Runtime and installed consumer tests |
+| Performance | Measured on Linux x64 only | [Benchmarks](benchmarks.md): `npm run benchmark` against the native core |
 
 Other architectures, musl, other Node versions and alternative JavaScript
 runtimes are unverified source-build possibilities, not supported binary targets.

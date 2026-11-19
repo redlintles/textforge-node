@@ -224,6 +224,14 @@ are rejected instead of replaced. `FilePath.fromNativeBytes` preserves Unix path
 bytes, while `FilePath.fromWindowsWide` preserves Windows UTF-16 code units.
 Unsupported foreign-platform path representations raise a portable error.
 
+## Performance
+
+The engine does the same work as in Rust; the binding adds a fixed cost of
+about half a microsecond per call and converts texts between UTF-16 and UTF-8
+on the way in and out, so large in-memory texts run at roughly 50–70% of native
+speed. File batches run at native speed. See [benchmarks](docs/benchmarks.md)
+and run `npm run benchmark` on your machine.
+
 ## Distribution and development
 
 [Compatibility and distribution](docs/compatibility.md) distinguishes locally
@@ -232,12 +240,9 @@ OS, architecture and libc. This repository does not publish a universal binary
 or automatically download one during installation.
 
 ```sh
-npm run check:generated
-npm run check:reference
-python3 scripts/generate-processor-reference.py --check
-python3 scripts/check-core.py
-npm run test:distribution
-python3 scripts/check.py
+python3 scripts/check.py     # full pre-commit matrix
+npm run test:distribution    # the packed tarball in a clean project
+npm run benchmark            # binding against native Rust
 ```
 
 `test:distribution` packs and installs the actual package in a clean temporary
@@ -245,7 +250,20 @@ project, then tests ESM, CommonJS and their TypeScript declarations. Add
 `--source` to the underlying script to also rebuild a source archive outside the
 checkout. CI runs both paths. Generated methods are readable static source;
 regeneration commands and freshness checks are committed. Publishing and pushing
-remain manual maintainer actions.
+remain manual maintainer actions. The [development guide](docs/development.md)
+describes the layout, every test suite, the generated sources and the release
+steps.
 
-Licensed GPL-3.0-only, matching the bundled core. See [LICENSE](LICENSE) and
-[Changelog.md](Changelog.md).
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [API and lifecycle](docs/api.md) | Every class and method, ownership, errors, profiles |
+| [Parity](docs/parity.md), [builder mapping](docs/builder-parity.json), [processor mapping](docs/processor-parity.json) | Rust API ↔ Node API and how parity is tested |
+| [Compatibility](docs/compatibility.md) | Supported versions, platforms and distribution checks |
+| [Core provenance](docs/core.md) | The bundled core and how to update it |
+| [Benchmarks](docs/benchmarks.md) | What the binding costs over native Rust |
+| [Development](docs/development.md) | Layout, tests, generators, releases |
+| [Changelog](Changelog.md) | Changes per version, behavior changes first |
+
+Licensed GPL-3.0-only, matching the bundled core. See [LICENSE](LICENSE).

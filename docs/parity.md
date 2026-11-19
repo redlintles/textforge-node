@@ -51,7 +51,10 @@ limit and pipeline names. Node compares stage, code, message, instruction,
 input, kind, cause, hint, ignorable and the uncolored report. Every successful
 builder case additionally round-trips through text and bytecode files.
 Separate tests cover native paths, short reads/writes, callback failures, cleanup,
-consuming failures, reentry and worker isolation. Installed packages run the same
+consuming failures, reentry and worker isolation; `ts/tests/behavior.test.ts`
+combines the 0.3/0.4 instructions with Unicode, watchers, buffers, batches,
+persistence and workers. The [development guide](development.md) lists every
+suite. Installed packages run the same
 Node suites with their pinned fixtures. A Rust test documents the portable
 `val`/`var`/`mutv` contract the adapter relies on.
 

@@ -57,6 +57,12 @@ Read these before upgrading; they come from the core.
   `profile`; the `ExecutionProfileName` type.
 - `Processor.setPipelineName` and `pipelineName`.
 
+### Performance
+
+- Strings are checked for unpaired surrogates with `isWellFormed` instead of a
+  regular expression: about 14 times faster on large inputs, 35 → 56 MiB/s on
+  16 MiB in the benchmark. Behavior is unchanged.
+
 ### Maintenance
 
 - The core snapshot is the crates.io crate file for file, with a derived
@@ -66,6 +72,14 @@ Read these before upgrading; they come from the core.
   instructions as Rust trait objects, error kinds) and 52 processor cases
   comparing every error field. The installed-package check exercises the new
   surface in ESM, CommonJS and both TypeScript module kinds.
+- New suites: `errors`, `profiles`, `instructions` and `behavior` (the new
+  instructions with Unicode, the one-level nesting rule, watchers, buffers,
+  batches, persistence and workers).
+- `npm run benchmark` compares the binding with the native core
+  (`examples/benchmark_native.rs`); results and analysis in
+  `docs/benchmarks.md`.
+- New `docs/development.md` (layout, suites, generated sources, release
+  steps) and a documentation index in the README.
 
 ## 0.1.0 — 2026-11-10
 
