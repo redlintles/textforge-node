@@ -35,6 +35,7 @@ try {
   const tests=readdirSync(join(installed,'dist/esm/tests')).filter(p=>p.endsWith('.test.js')).map(p=>join(installed,'dist/esm/tests',p));
   for (const file of tests) run(process.execPath,[file],consumer);
   const smoke=`import assert from 'node:assert/strict';
+import {mkdirSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import * as esm from '${manifest.name}';
 const cjs=createRequire(import.meta.url)('${manifest.name}');
@@ -43,6 +44,7 @@ const plan=new esm.Pipeline().trimBothSides().addToBeginning('Banana ').addToEnd
   .blockAssoc('banana',new cjs.Pipeline().toReverse().toLowercaseAll().replaceAllWith('a','o')).normalizeUnicode('nfc').callBlock('banana')
   .defineReplaceMap('rmap1',map=>map.addReplace('o','x').end()).executeReplaceMap('rmap1');
 const processor=new cjs.Processor();
+mkdirSync('new folder'); // TextForge 0.4.0 does not create parent directories.
 for(const source of [plan,plan.compile()]) {
   const id=processor.register(source);
   assert.equal(processor.processAll(id,' é '),'!é xnxnxb');
@@ -52,12 +54,18 @@ for(const source of [plan,plan.compile()]) {
   assert.equal(processor.processAll(processor.getPipelineFromFile('new folder/banana.tft'),' é '),'!é xnxnxb');
   assert.equal(processor.processAll(processor.readFromBytecodeFile('new folder/banana.tfb'),' é '),'!é xnxnxb');
 }
+// TextForge 0.4.0 surface: tryIgnore, error details and execution profiles.
+assert.equal(new esm.Pipeline().tryIgnore(new cjs.Pipeline().deleteSingle(9)).addToEnd('!').compile().process('abc'),'abc!');
+assert.throws(()=>new esm.Pipeline().deleteSingle(9).compile().process('abc'),
+  e=>e instanceof cjs.TextForgeError&&e.kind==='IndexOutOfRange'&&e.parameters[0].name==='index'&&e.report.startsWith('error[12]'));
+const limited=new esm.Processor().withProfile(cjs.ExecutionProfile.balanced().withLimits({maxGeneratedBytes:8,maxIterations:null}));
+assert.throws(()=>limited.processAll(limited.register(new esm.Pipeline().repeat(3)),'abc'),e=>e.code===31&&!e.ignorable);
 `;
   writeFileSync(join(consumer,'smoke.mjs'),smoke);
   run(process.execPath,['smoke.mjs'],consumer);
-  const esm=`import {Pipeline,Processor,PortableBuffer,TextForgeError,Instruction,Observers,getVar} from '${manifest.name}';
-const processor=new Processor(); const id=processor.createPipeline().addToBeginning('🍌').deleteLine(1n).build();
-const output:string=processor.processAll(id,'é');
+  const esm=`import {ExecutionProfile,Pipeline,Processor,PortableBuffer,TextForgeError,Instruction,Observers,getVar} from '${manifest.name}';
+const processor=new Processor(); const id=processor.createPipeline().addToBeginning('🍌').deleteLine(0n).build();
+const output:string=processor.processAll(id,'é\\nx');
 const length:bigint=PortableBuffer.fromText(output).lenBytes();
 // @ts-expect-error booleans are not integers
 new Pipeline().repeat(true);
@@ -85,10 +93,21 @@ external.normalizeUnicode('unknown');
 // @ts-expect-error misspelled built-in metric
 observers.setBuiltin('words','wordCount');
 observers.close();
-void length; void TextForgeError;
+const profile: import('${manifest.name}').ExecutionProfile = ExecutionProfile.fast().unlimited();
+processor.setProfile(profile);
+const name: string = processor.pipelineName(id);
+new Pipeline().tryIgnore(new Instruction('dls',9)).onLine('[[__LINES__ - 1]]',new Pipeline().deleteFirst());
+// @ts-expect-error tryIgnore takes an instruction value, not a variable reference
+new Pipeline().tryIgnore(getVar('x'));
+// @ts-expect-error unknown profile preset
+ExecutionProfile.preset('huge');
+try { processor.processAll('missing','x'); } catch (error) {
+  if (error instanceof TextForgeError) { const kind: string = error.kind; const frames: readonly {instruction:string}[] = error.trace; void kind; void frames; }
+}
+void length; void name; void TextForgeError;
 `;
   writeFileSync(join(consumer,'consumer.mts'),esm);
-  writeFileSync(join(consumer,'consumer.cts'),esm.replace(`import {Pipeline,Processor,PortableBuffer,TextForgeError,Instruction,Observers,getVar} from '${manifest.name}';`,`import binding = require('${manifest.name}');\nconst {Pipeline,Processor,PortableBuffer,TextForgeError,Instruction,Observers,getVar}=binding;`));
+  writeFileSync(join(consumer,'consumer.cts'),esm.replace(`import {ExecutionProfile,Pipeline,Processor,PortableBuffer,TextForgeError,Instruction,Observers,getVar} from '${manifest.name}';`,`import binding = require('${manifest.name}');\nconst {ExecutionProfile,Pipeline,Processor,PortableBuffer,TextForgeError,Instruction,Observers,getVar}=binding;`));
   run(process.execPath,[join(root,'node_modules/typescript/bin/tsc'),'--noEmit','--strict','--target','ES2022','--module','NodeNext','--moduleResolution','NodeNext','consumer.mts','consumer.cts'],consumer);
   console.log(`Verified installed ${manifest.name} ${manifest.version}: ESM, CommonJS, declarations${build===root?'':' and independent source rebuild'}`);
 } finally {
