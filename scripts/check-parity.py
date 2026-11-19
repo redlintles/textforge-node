@@ -27,6 +27,8 @@ for name in sorted(names):
  js='constructor' if name=='new' else camel(name)
  if name=='new': portable='PortableProcessor::new'
  elif name=='create_pipeline': portable='PortableProcessor::create_pipeline / register'
+ # Consuming Rust builder form; the portable processor offers only set_profile.
+ elif name=='with_profile': portable='PortableProcessor::set_profile'
  else: portable='PortableProcessor::'+name
  assert re.search(r'\b'+re.escape(js)+r'\(',ts),f'Missing public processor method: {name}'
  mapping.append({'rust':name,'portable':portable,'javascript':js})
@@ -40,9 +42,15 @@ for source in ['processor.rs','buffered.rs','watchers.rs']:
 builder=json.loads((ROOT/'docs/builder-parity.json').read_text())
 fixtures=json.loads((ROOT/'tests/fixtures/builder_reference.json').read_text())
 covered={c['name'] for c in fixtures}
+# File builders run against real files in ts/tests/instructions.test.ts (see generate-reference.py).
+file_methods={'pipeline_join','write_to_file','append_file','prepend_file','insert_file'}
+instructions=(ROOT/'ts/tests/instructions.test.ts').read_text()
 for method in builder['methods']:
+ if method['rust'] in file_methods:
+  assert method['javascript']+'(' in instructions,f'Missing file builder test: {method["javascript"]}'
+  continue
  assert method['rust'] in covered,f'Missing native builder fixture: {method["rust"]}'
-output=json.dumps({'coreVersion':'0.2.0','methods':mapping},indent=2)+'\n'
+output=json.dumps({'coreVersion':builder['coreVersion'],'methods':mapping},indent=2)+'\n'
 p=ROOT/'docs/processor-parity.json'
 if '--write' in sys.argv:p.write_text(output)
 else:assert p.read_text()==output,'Stale processor mapping'

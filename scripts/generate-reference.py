@@ -18,6 +18,38 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests/fixtures/builder_reference.json"
 EXAMPLE = ROOT / "examples/builder_reference.rs"
+# Builders that read or write files at run time. A fixture cannot hold portable
+# paths for them, so ts/tests/instructions.test.ts covers them with real files.
+FILE_METHODS = {"pipeline_join", "write_to_file", "append_file", "prepend_file", "insert_file"}
+# Instructions a nested `impl Into<TokenWrapper>` fixture may build, as Rust trait
+# objects: (module, struct, constructor).
+TOKENS = {
+    "trim_both_sides": ("tbs", "Tbs", "default()"),
+    "delete_first": ("dlf", "Dlf", "default()"),
+    "to_reverse": ("rev", "Rev", "default()"),
+    "unique_lines": ("uniqln", "Uniqln", "default()"),
+    "to_uppercase_all": ("tua", "Tua", "default()"),
+}
+NESTED_CASES: list[dict[str, Any]] = [
+    {"name": "on_line", "input": "  a  \n  b  \n",
+     "steps": [["on_line", [1, {"token": ["trim_both_sides", []]}]]]},
+    {"name": "on_line_out_of_range", "input": "a\nb",
+     "steps": [["on_line", [5, {"token": ["trim_both_sides", []]}]]]},
+    {"name": "on_chunk", "input": "abcde",
+     "steps": [["on_chunk", [1, 3, {"token": ["delete_first", []]}]]]},
+    {"name": "on_chunk_clamped", "input": "abcde",
+     "steps": [["on_chunk", [2, 99, {"token": ["to_uppercase_all", []]}]]]},
+    {"name": "on_line_interval", "input": "b\nb\na\nc",
+     "steps": [["on_line_interval", [0, 2, {"token": ["unique_lines", []]}]]]},
+    {"name": "try_ignore", "input": "abc",
+     "steps": [["try_ignore", [{"token": ["delete_single", [9]]}]], ["add_to_end", ["!"]]]},
+    {"name": "try_ignore_success", "input": "abc",
+     "steps": [["try_ignore", [{"token": ["to_reverse", []]}]]]},
+    {"name": "try_ignore_unicode", "input": "é",
+     "steps": [["try_ignore", [{"token": ["delete_single", [1]]}]], ["repeat", [2]]]},
+    {"name": "try_ignore_limit", "input": "x",
+     "steps": [["try_ignore", [{"token": ["repeat", [3000000000]]}]]]},
+]
 
 
 def cases() -> list[dict[str, Any]]:
@@ -40,7 +72,9 @@ def cases() -> list[dict[str, Any]]:
                 steps.insert(0, ["add_replace_rule", ["animals", "cat", "dog"]])
             result.append({"name": name, "input": input_text, "steps": steps})
             continue
-        if name in {"val", "var", "mut_var", "eval", "iter", "end", "remove_pattern"}:
+        if name in {"val", "var", "mut_var", "eval", "iter", "end", "remove_pattern"} | FILE_METHODS:
+            continue
+        if any(case["name"] == name for case in NESTED_CASES):
             continue
         docs_match = re.search(r"((?:    ///[^\n]*\n|[ \t]*\n)*)$", trait[: match.start()])
         docs = re.sub(r"(?m)^    /// ?", "", docs_match[0]) if docs_match else ""
@@ -115,6 +149,7 @@ def cases() -> list[dict[str, Any]]:
             },
         ]
     )
+    result.extend(NESTED_CASES)
     result.append({"name":"define_replace_map", "input":"cat wolf", "steps":[
         ["define_replace_map",["animals",{"map":[["cat","wolf"],["wolf","dog"]]}]],
         ["execute_replace_map",["animals"]],
@@ -136,6 +171,18 @@ def rust_argument(value: object) -> str:
         return "|map| { " + "".join(f"map.add_replace({rust_argument(a)}, {rust_argument(b)})?; " for a,b in value["map"]) + "map.end() }"
     if "body" in value:
         return "|body| { " + rust_chain(value["body"], "body") + "; Ok(()) }"
+    if "token" in value:
+        method, arguments = value["token"]
+        if method == "delete_single":
+            (index,) = arguments
+            return f"Box::new(textforge::tokens::transforms::dls::Dls::new({index})) as Box<dyn InstructionMethods>"
+        if method == "repeat":
+            (times,) = arguments
+            return f"Box::new(textforge::tokens::transforms::rpt::Rpt::new({times})) as Box<dyn InstructionMethods>"
+        if method not in TOKENS or arguments:
+            raise ValueError("Unsupported nested Rust fixture; extend TOKENS")
+        module, struct, constructor = TOKENS[method]
+        return f"Box::new(textforge::tokens::transforms::{module}::{struct}::{constructor}) as Box<dyn InstructionMethods>"
     if "instruction" in value:
         if value["instruction"] != ["add_to_beginning", ["🍌"]]:
             raise ValueError("Unsupported nested Rust fixture; extend its explicit template")
@@ -161,6 +208,7 @@ use textforge::{
     api::{get_var, processor::{TextForgeProcessor, TextForgeProcessorMethods},
         TextForgeBuilderMethods, TextForgeBlockMethods, TextForgeConditionalMethods},
     parser::{params::TextForgeParamTypes, resolve_var::{TokenWrapper, ValType}},
+    tokens::InstructionMethods,
     utils::errors::TextForgeError,
 };
 
@@ -171,7 +219,11 @@ fn record(name: &str, result: Result<String, TextForgeError>) {
                 .map(|byte| format!("{byte:02x}")).collect();
             println!("{name}\\tok\\t{encoded}");
         }
-        Err(error) => println!("{name}\\terror\\t{}", error.error_code.get_error_code()),
+        Err(error) => println!(
+            "{name}\\terror\\t{}\\t{}",
+            error.error_code.get_error_code(),
+            error.error_code.name()
+        ),
     }
 }
 
@@ -218,11 +270,11 @@ def main() -> None:
     )
     rows = {parts[0]: parts[1:] for line in output.splitlines() if (parts := line.split("\t"))}
     for case in data:
-        status, payload = rows[case["name"]]
+        status, *payload = rows[case["name"]]
         case["result"] = (
-            {"ok": bytes.fromhex(payload).decode("utf-8")}
+            {"ok": bytes.fromhex(payload[0]).decode("utf-8")}
             if status == "ok"
-            else {"error": int(payload)}
+            else {"error": int(payload[0]), "kind": payload[1]}
         )
     fixture = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
     if args.check:

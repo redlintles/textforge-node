@@ -3,16 +3,18 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {Pipeline,Instruction,Variable,TextForgeError} from '../index.js';
 type Step = [string, unknown[]];
-type Case = {name:string;input:string;steps:Step[];result:{ok?:string;error?:number}};
+type Case = {name:string;input:string;steps:Step[];result:{ok?:string;error?:number;kind?:string}};
 function camel(value: string): string { return value.replace(/_([a-z])/g,(_,c:string) => c.toUpperCase()); }
 function argument(value: unknown): unknown {
   if (typeof value !== 'object' || value === null) return value;
-  const v=value as {variable?:string;instruction?:[string,unknown[]];body?:Step[];map?:[string,string][]};
+  const v=value as {variable?:string;instruction?:[string,unknown[]];token?:[string,unknown[]];body?:Step[];map?:[string,string][]};
   if (v.variable) return new Variable(v.variable);
   if (v.instruction) {
     const [name,args]=v.instruction;
     return new Pipeline()[camel(name) as 'addToBeginning'](...args.map(argument) as [string]);
   }
+  // Rust builds these as trait objects; JavaScript passes a single-instruction Pipeline.
+  if (v.token) return chain([v.token]);
   if (v.body) return chain(v.body);
   if (v.map) return (map: import('../index.js').ReplaceMapBuilder) => { for(const [pattern,replacement] of v.map!) map.addReplace(pattern,replacement); map.end(); };
   throw new TypeError('unknown fixture argument');
@@ -28,18 +30,19 @@ function chain(steps: Step[]): Pipeline {
 const fixtures=JSON.parse(readFileSync(new URL('../../../tests/fixtures/builder_reference.json',import.meta.url),'utf8')) as Case[];
 for (const fixture of fixtures) test(`public Rust builder parity: ${fixture.name}`,() => {
   if ('ok' in fixture.result) assert.equal(chain(fixture.steps).compile().process(fixture.input),fixture.result.ok);
-  else assert.throws(() => chain(fixture.steps).compile().process(fixture.input),e => e instanceof TextForgeError && e.code===fixture.result.error);
+  else assert.throws(() => chain(fixture.steps).compile().process(fixture.input),
+    e => e instanceof TextForgeError && e.code===fixture.result.error && e.kind===fixture.result.kind);
 });
 test('nested instruction snapshots preserve typed owned values',() => {
   const nested=new Instruction('iter',2n,new Instruction('atb','🍌'));
   assert.equal(new Pipeline(nested).compile().process('é'),'🍌🍌é');
 });
 
-import {Processor,Observers,BufferOptions,PortableBuffer} from '../index.js';
+import {Processor,Observers,BufferOptions,PortableBuffer,ExecutionProfile} from '../index.js';
 import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-type Reference = {ok?:string;error?:{stage:string;code:number;message:string;instruction:string;input:string}};
+type Reference = {ok?:string;error?:{stage:string;code:number;message:string;instruction:string;input:string;kind:string;cause:string|null;hint:string|null;ignorable:boolean;report:string}};
 const processorReference=JSON.parse(readFileSync(new URL('../../../tests/fixtures/processor_reference.json',import.meta.url),'utf8')) as {cases:Record<string,Reference>};
 test('native Rust processor results and complete portable diagnostics', t => {
   const dir=mkdtempSync(join(tmpdir(),'textforge-parity-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
@@ -65,6 +68,10 @@ test('native Rust processor results and complete portable diagnostics', t => {
     callback_error:()=>{const o=new Observers();try{o.set('bad',()=>{throw new Error('boom');});o.scheduleAll('bad');return processor.processAllWithWatchers(processor.register(new Pipeline().addToBeginning('🍌')),'x',o,join(dir,'failed.json'));}finally{o.close();}},
     // @ts-expect-error Exercise the core error for an invalid metric supplied by plain JavaScript.
     builtin_error:()=>{observers.setBuiltin('x','missing');return '';},
+    execution_details:()=>new Pipeline(new Instruction('iter',2,new Instruction('dls','[[__COUNTER__ + 8]]'))).compile().process('abc'),
+    limit_exceeded:()=>{const p=new Processor().withProfile(ExecutionProfile.balanced().withLimits({maxGeneratedBytes:8,maxIterations:10_000_000}));return p.processAll(p.register(new Pipeline().repeat(3)),'abc');},
+    pipeline_name:()=>{const p=new Processor();const named=p.register(new Pipeline().addToEnd('@{{__PIPELINE_NAME__}}'));p.setPipelineName(named,'cleanup');return p.processAll(named,'run');},
+    pipeline_name_missing:()=>processor.pipelineName('missing'),
     invalid_utf8:()=>{let sent=false;PortableBuffer.fromReader(()=>{if(sent)return Buffer.alloc(0);sent=true;return Buffer.from([255]);},new BufferOptions(1,dir));return '';},
   };
   const lineCases:Record<string,[string,unknown[]]>={
@@ -74,12 +81,12 @@ test('native Rust processor results and complete portable diagnostics', t => {
   };
   for(const [snake,method] of [['delete_line','deleteLine'],['delete_lines_after','deleteLinesAfter'],['delete_lines_before','deleteLinesBefore']]) {
     // Only cases emitted by the native oracle are checked below.
-    for(const [suffix,value] of [['zero',0],['missing',100]] as const) lineCases[`${snake}_${suffix}`]=[method!,[value]];
+    for(const [suffix,value] of [['zero',0],['past_end',2],['missing',100]] as const) lineCases[`${snake}_${suffix}`]=[method!,[value]];
   }
   for(const [snake,method] of [['insert_line','insertLine'],['replace_line','replaceLine']])
-    for(const [suffix,value] of [['zero',0],['missing',100]] as const) lineCases[`${snake}_${suffix}`]=[method!,[value,'x']];
+    for(const [suffix,value] of [['zero',0],['past_end',2],['missing',100]] as const) lineCases[`${snake}_${suffix}`]=[method!,[value,'x']];
   for(const [snake,method] of [['select_lines','selectLines'],['delete_lines_interval','deleteLinesInterval']])
-    for(const [suffix,start,end] of [['zero',0,1],['missing',1,100],['inverted',2,1]] as const) lineCases[`${snake}_${suffix}`]=[method!,[start,end]];
+    for(const [suffix,start,end] of [['zero',0,1],['past_end',2,3],['missing',1,100],['inverted',2,1]] as const) lineCases[`${snake}_${suffix}`]=[method!,[start,end]];
   for(const [name,[method,args]] of Object.entries(lineCases)) results['line_'+name]=()=>{
     const plan=new Pipeline();const fn=(plan as unknown as Record<string,(...args:unknown[])=>Pipeline>)[method]!;
     return fn.apply(plan,args).compile().process('a\nb');
@@ -89,7 +96,8 @@ test('native Rust processor results and complete portable diagnostics', t => {
     if('ok' in expected) assert.equal(results[name]!(),expected.ok,name);
     else assert.throws(results[name]!,e=>{
       assert.ok(e instanceof TextForgeError,name);
-      assert.deepEqual({stage:e.stage,code:e.code,message:e.message,instruction:e.instruction,input:e.input},expected.error,name);
+      assert.deepEqual({stage:e.stage,code:e.code,message:e.message,instruction:e.instruction,input:e.input,
+        kind:e.kind,cause:e.cause,hint:e.hint,ignorable:e.ignorable,report:e.report},expected.error,name);
       return true;
     });
   }
@@ -103,7 +111,7 @@ test('every native builder reference survives text and bytecode export/import',t
     if(!('ok' in fixture.result))continue;
     const id=processor.register(chain(fixture.steps));
     for(const extension of ['tft','tfb']){
-      const path=join(dir,fixture.name,`pipeline.${extension}`);
+      const path=join(dir,`${fixture.name}.${extension}`);
       let restored:string;
       if(extension==='tft'){
         processor.writePipelineToFile(id,path);restored=processor.getPipelineFromFile(path);

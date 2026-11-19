@@ -1,5 +1,5 @@
 {
-  "coreVersion": "0.2.0",
+  "coreVersion": "0.4.0",
   "methods": [
     {
       "rust": "add_transform",
@@ -30,6 +30,11 @@
       "rust": "new",
       "portable": "PortableProcessor::new",
       "javascript": "constructor"
+    },
+    {
+      "rust": "pipeline_name",
+      "portable": "PortableProcessor::pipeline_name",
+      "javascript": "pipelineName"
     },
     {
       "rust": "process_all",
@@ -92,6 +97,11 @@
       "javascript": "processSingleWithDebug"
     },
     {
+      "rust": "profile",
+      "portable": "PortableProcessor::profile",
+      "javascript": "profile"
+    },
+    {
       "rust": "read_from_bytecode_file",
       "portable": "PortableProcessor::read_from_bytecode_file",
       "javascript": "readFromBytecodeFile"
@@ -107,6 +117,16 @@
       "javascript": "runTransform"
     },
     {
+      "rust": "set_pipeline_name",
+      "portable": "PortableProcessor::set_pipeline_name",
+      "javascript": "setPipelineName"
+    },
+    {
+      "rust": "set_profile",
+      "portable": "PortableProcessor::set_profile",
+      "javascript": "setProfile"
+    },
+    {
       "rust": "show_transforms",
       "portable": "PortableProcessor::show_transforms",
       "javascript": "showTransforms"
@@ -115,6 +135,11 @@
       "rust": "transform_exists",
       "portable": "PortableProcessor::transform_exists",
       "javascript": "transformExists"
+    },
+    {
+      "rust": "with_profile",
+      "portable": "PortableProcessor::set_profile",
+      "javascript": "withProfile"
     },
     {
       "rust": "write_pipeline_to_file",

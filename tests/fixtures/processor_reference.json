@@ -1,5 +1,5 @@
 {
-  "core_revision": "c2ed4b8f4c96c9e3ddc53576a3cdbf6ccd38bc9e",
+  "core_revision": "6407329777e5d3c3875e8695ebc2b683f4d4f9e1",
   "cases": {
     "unicode": {
       "ok": "🍌é\u0000é"
@@ -11,81 +11,126 @@
       "error": {
         "code": 3,
         "stage": "execution",
-        "message": "Token array not found, is missing a valid identifier for this processor?",
-        "instruction": "get identifier",
-        "input": ""
+        "message": "no pipeline is registered with the id `missing`; use the id returned when the pipeline was registered",
+        "instruction": "processor",
+        "input": "missing",
+        "kind": "TokenArrayNotFound",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[3] TokenArrayNotFound: no pipeline is registered with the id `missing`; use the id returned when the pipeline was registered\n  --> processor\n\n  Input: missing"
       }
     },
     "missing_snapshot": {
       "error": {
         "code": 3,
         "stage": "execution",
-        "message": "Transform not found",
-        "instruction": "get_transform_vec",
-        "input": "missing"
+        "message": "no pipeline is registered with the id `missing`",
+        "instruction": "processor",
+        "input": "missing",
+        "kind": "TokenArrayNotFound",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[3] TokenArrayNotFound: no pipeline is registered with the id `missing`\n  --> processor\n\n  Input: missing"
       }
     },
     "missing_remove": {
       "error": {
-        "code": 2,
+        "code": 3,
         "stage": "execution",
-        "message": "Transformation not found",
-        "instruction": "remove_transform",
-        "input": "missing"
+        "message": "cannot remove the pipeline `missing`: no pipeline is registered with that id",
+        "instruction": "processor",
+        "input": "missing",
+        "kind": "TokenArrayNotFound",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[3] TokenArrayNotFound: cannot remove the pipeline `missing`: no pipeline is registered with that id\n  --> processor\n\n  Input: missing"
       }
     },
     "missing_variable": {
       "error": {
         "code": 9,
         "stage": "execution",
-        "message": "Variable not found",
-        "instruction": "get_var",
-        "input": "missing"
+        "message": "no variable is named `missing`; define it with `var` or `val` before using it",
+        "instruction": "rpt {{missing}};",
+        "input": "missing",
+        "kind": "VariableNotFound",
+        "cause": null,
+        "hint": "define the variable with `var` or `val` before the instruction that reads it",
+        "ignorable": true,
+        "report": "error[9] VariableNotFound: no variable is named `missing`; define it with `var` or `val` before using it\n  --> rpt {{missing}};\n\n  Trace (outermost first):\n    → rpt {{missing}};  ← failed here\n\n  Input: missing\n\n  Hint: define the variable with `var` or `val` before the instruction that reads it"
       }
     },
     "invalid_regex": {
       "error": {
         "code": 17,
         "stage": "execution",
-        "message": "Failed to create regex",
-        "instruction": "sslt",
-        "input": "["
+        "message": "`[` is not a valid regular expression",
+        "instruction": "rmp",
+        "input": "[",
+        "kind": "TextParsingError",
+        "cause": "regex parse error:\n    [\n    ^\nerror: unclosed character class",
+        "hint": null,
+        "ignorable": true,
+        "report": "error[17] TextParsingError: `[` is not a valid regular expression\n  --> rmp\n\n  Trace (outermost first):\n    → rmp '[';  ← failed here\n\n  Input: [\n\n  Caused by: regex parse error:\n    [\n    ^\nerror: unclosed character class"
       }
     },
     "unknown": {
       "error": {
         "code": 2,
         "stage": "conversion",
-        "message": "Token Not Found in mapping",
+        "message": "unknown instruction `unknown`; see the instruction index (docs.rs/textforge, module `tokens`)",
         "instruction": "unknown",
-        "input": "portable instruction lookup"
+        "input": "portable instruction lookup",
+        "kind": "TokenNotFound",
+        "cause": null,
+        "hint": "the instruction index lists every instruction (README.md or the `tokens` page on docs.rs)",
+        "ignorable": true,
+        "report": "error[2] TokenNotFound: unknown instruction `unknown`; see the instruction index (docs.rs/textforge, module `tokens`)\n  --> unknown\n\n  Input: portable instruction lookup\n\n  Hint: the instruction index lists every instruction (README.md or the `tokens` page on docs.rs)"
       }
     },
     "arity": {
       "error": {
         "code": 14,
         "stage": "validation",
-        "message": "Parameter count mismatch",
+        "message": "`atb` takes 1 parameter, but 0 were given",
         "instruction": "atb",
-        "input": "expected=1, got=0"
+        "input": "",
+        "kind": "InvalidParameters",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[14] InvalidParameters: `atb` takes 1 parameter, but 0 were given\n  --> atb"
       }
     },
     "parameter_type": {
       "error": {
         "code": 23,
         "stage": "validation",
-        "message": "Literal parameter type mismatch",
+        "message": "parameter 1 of `atb` must be text",
         "instruction": "atb",
-        "input": "parameter=0, expected=String"
+        "input": "",
+        "kind": "IncompatibleTypeError",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[23] IncompatibleTypeError: parameter 1 of `atb` must be text\n  --> atb"
       }
     },
     "persistence_missing": {
       "error": {
         "code": 3,
         "stage": "persistence",
-        "message": "Token array not found, is missing a valid identifier for this processor?",
-        "instruction": "get identifier",
-        "input": ""
+        "message": "no pipeline is registered with the id `missing`; use the id returned when the pipeline was registered",
+        "instruction": "processor",
+        "input": "missing",
+        "kind": "TokenArrayNotFound",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[3] TokenArrayNotFound: no pipeline is registered with the id `missing`; use the id returned when the pipeline was registered\n  --> processor\n\n  Input: missing"
       }
     },
     "text_roundtrip": {
@@ -109,25 +154,40 @@
         "stage": "callback",
         "message": "Error: boom",
         "instruction": "portable observer",
-        "input": "bad"
+        "input": "bad",
+        "kind": "GenericError",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[27] GenericError: Error: boom\n  --> portable observer\n\n  Input: bad"
       }
     },
     "builtin_error": {
       "error": {
         "code": 25,
         "stage": "conversion",
-        "message": "Unknown builtin watcher",
-        "instruction": "Observers.set_builtin",
-        "input": "missing"
+        "message": "unknown built-in metric `missing`; available metrics: current_len_bytes, current_len_chars, byte_delta, char_delta, word_count, word_count_delta, line_count, is_empty, is_unchanged, whitespace_count, digit_count, alpha_count, uppercase_count, lowercase_count, unique_char_count",
+        "instruction": "",
+        "input": "missing",
+        "kind": "WatcherNotFoundError",
+        "cause": null,
+        "hint": "`txf --help` lists the built-in watchers",
+        "ignorable": true,
+        "report": "error[25] WatcherNotFoundError: unknown built-in metric `missing`; available metrics: current_len_bytes, current_len_chars, byte_delta, char_delta, word_count, word_count_delta, line_count, is_empty, is_unchanged, whitespace_count, digit_count, alpha_count, uppercase_count, lowercase_count, unique_char_count\n\n  Input: missing\n\n  Hint: `txf --help` lists the built-in watchers"
       }
     },
     "invalid_utf8": {
       "error": {
         "code": 29,
         "stage": "execution",
-        "message": "invalid utf-8 sequence of 1 bytes from index 0",
-        "instruction": "TextBuffer",
-        "input": "invalid UTF-8 document"
+        "message": "the text is not valid UTF-8: invalid utf-8 sequence of 1 bytes from index 0",
+        "instruction": "",
+        "input": "",
+        "kind": "InvalidUtf8Error",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[29] InvalidUtf8Error: the text is not valid UTF-8: invalid utf-8 sequence of 1 bytes from index 0"
       }
     },
     "line_append_line_multiline": {
@@ -136,7 +196,12 @@
         "stage": "execution",
         "message": "Expected a single line",
         "instruction": "apl",
-        "input": "x\ny"
+        "input": "x\ny",
+        "kind": "InvalidParameters",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[14] InvalidParameters: Expected a single line\n  --> apl\n\n  Trace (outermost first):\n    → apl \"x\\ny\";  ← failed here\n\n  Input: x\\ny"
       }
     },
     "line_prepend_line_multiline": {
@@ -145,7 +210,12 @@
         "stage": "execution",
         "message": "Expected a single line",
         "instruction": "pln",
-        "input": "x\ny"
+        "input": "x\ny",
+        "kind": "InvalidParameters",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[14] InvalidParameters: Expected a single line\n  --> pln\n\n  Trace (outermost first):\n    → pln \"x\\ny\";  ← failed here\n\n  Input: x\\ny"
       }
     },
     "line_insert_line_multiline": {
@@ -154,7 +224,12 @@
         "stage": "execution",
         "message": "Expected a single line",
         "instruction": "inl",
-        "input": "x\ny"
+        "input": "x\ny",
+        "kind": "InvalidParameters",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[14] InvalidParameters: Expected a single line\n  --> inl\n\n  Trace (outermost first):\n    → inl 1 \"x\\ny\";  ← failed here\n\n  Input: x\\ny"
       }
     },
     "line_replace_line_multiline": {
@@ -163,169 +238,297 @@
         "stage": "execution",
         "message": "Expected a single line",
         "instruction": "rln",
-        "input": "x\ny"
+        "input": "x\ny",
+        "kind": "InvalidParameters",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[14] InvalidParameters: Expected a single line\n  --> rln\n\n  Trace (outermost first):\n    → rln 1 \"x\\ny\";  ← failed here\n\n  Input: x\\ny"
       }
     },
     "line_keep_lines_matching_regex": {
       "error": {
         "code": 17,
         "stage": "execution",
-        "message": "regex parse error:\n    [\n    ^\nerror: unclosed character class",
+        "message": "`[` is not a valid regular expression",
         "instruction": "klm",
-        "input": "["
+        "input": "[",
+        "kind": "TextParsingError",
+        "cause": "regex parse error:\n    [\n    ^\nerror: unclosed character class",
+        "hint": null,
+        "ignorable": true,
+        "report": "error[17] TextParsingError: `[` is not a valid regular expression\n  --> klm\n\n  Trace (outermost first):\n    → klm '[';  ← failed here\n\n  Input: [\n\n  Caused by: regex parse error:\n    [\n    ^\nerror: unclosed character class"
       }
     },
     "line_delete_lines_matching_regex": {
       "error": {
         "code": 17,
         "stage": "execution",
-        "message": "regex parse error:\n    [\n    ^\nerror: unclosed character class",
+        "message": "`[` is not a valid regular expression",
         "instruction": "dlm",
-        "input": "["
+        "input": "[",
+        "kind": "TextParsingError",
+        "cause": "regex parse error:\n    [\n    ^\nerror: unclosed character class",
+        "hint": null,
+        "ignorable": true,
+        "report": "error[17] TextParsingError: `[` is not a valid regular expression\n  --> dlm\n\n  Trace (outermost first):\n    → dlm '[';  ← failed here\n\n  Input: [\n\n  Caused by: regex parse error:\n    [\n    ^\nerror: unclosed character class"
       }
     },
     "line_delete_line_zero": {
-      "error": {
-        "code": 14,
-        "stage": "execution",
-        "message": "Line numbers start at one",
-        "instruction": "dln",
-        "input": "0"
-      }
+      "ok": "b"
     },
     "line_delete_line_missing": {
       "error": {
         "code": 12,
         "stage": "execution",
-        "message": "Line 100 does not exist; expected 1..=2",
+        "message": "line 100 does not exist: the text has 2 lines (valid lines 0 to 1)",
         "instruction": "dln",
-        "input": "a\nb"
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 100 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> dln\n\n  Trace (outermost first):\n    → dln 100;  ← failed here\n\n  Parameters:\n    line = 100\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
       }
     },
     "line_delete_lines_after_zero": {
-      "error": {
-        "code": 14,
-        "stage": "execution",
-        "message": "Line numbers start at one",
-        "instruction": "dlna",
-        "input": "0"
-      }
+      "ok": "a\n"
     },
     "line_delete_lines_after_missing": {
       "error": {
         "code": 12,
         "stage": "execution",
-        "message": "Line 100 does not exist; expected 1..=2",
+        "message": "line 100 does not exist: the text has 2 lines (valid lines 0 to 1)",
         "instruction": "dlna",
-        "input": "a\nb"
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 100 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> dlna\n\n  Trace (outermost first):\n    → dlna 100;  ← failed here\n\n  Parameters:\n    line = 100\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
       }
     },
     "line_delete_lines_before_zero": {
-      "error": {
-        "code": 14,
-        "stage": "execution",
-        "message": "Line numbers start at one",
-        "instruction": "dlnb",
-        "input": "0"
-      }
+      "ok": "a\nb"
     },
     "line_delete_lines_before_missing": {
       "error": {
         "code": 12,
         "stage": "execution",
-        "message": "Line 100 does not exist; expected 1..=2",
+        "message": "line 100 does not exist: the text has 2 lines (valid lines 0 to 1)",
         "instruction": "dlnb",
-        "input": "a\nb"
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 100 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> dlnb\n\n  Trace (outermost first):\n    → dlnb 100;  ← failed here\n\n  Parameters:\n    line = 100\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
       }
     },
     "line_insert_line_zero": {
-      "error": {
-        "code": 14,
-        "stage": "execution",
-        "message": "Line numbers start at one",
-        "instruction": "inl",
-        "input": "0"
-      }
+      "ok": "x\na\nb"
     },
     "line_insert_line_missing": {
       "error": {
         "code": 12,
         "stage": "execution",
-        "message": "Line 100 does not exist; expected 1..=3",
+        "message": "cannot insert before line 100: the text has 2 lines (insert before 0 to 2; 2 appends)",
         "instruction": "inl",
-        "input": "a\nb"
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: cannot insert before line 100: the text has 2 lines (insert before 0 to 2; 2 appends)\n  --> inl\n\n  Trace (outermost first):\n    → inl 100 x;  ← failed here\n\n  Parameters:\n    line = 100\n    text = \"x\"\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
       }
     },
     "line_replace_line_zero": {
-      "error": {
-        "code": 14,
-        "stage": "execution",
-        "message": "Line numbers start at one",
-        "instruction": "rln",
-        "input": "0"
-      }
+      "ok": "x\nb"
     },
     "line_replace_line_missing": {
       "error": {
         "code": 12,
         "stage": "execution",
-        "message": "Line 100 does not exist; expected 1..=2",
+        "message": "line 100 does not exist: the text has 2 lines (valid lines 0 to 1)",
         "instruction": "rln",
-        "input": "a\nb"
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 100 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> rln\n\n  Trace (outermost first):\n    → rln 100 x;  ← failed here\n\n  Parameters:\n    line = 100\n    text = \"x\"\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
       }
     },
     "line_select_lines_zero": {
-      "error": {
-        "code": 14,
-        "stage": "execution",
-        "message": "Line numbers start at one",
-        "instruction": "slnc",
-        "input": "0"
-      }
+      "ok": "a\nb"
     },
     "line_select_lines_missing": {
-      "error": {
-        "code": 12,
-        "stage": "execution",
-        "message": "Line 100 does not exist; expected 1..=2",
-        "instruction": "slnc",
-        "input": "a\nb"
-      }
+      "ok": "b"
     },
     "line_select_lines_inverted": {
       "error": {
-        "code": 14,
+        "code": 12,
         "stage": "execution",
-        "message": "Line range must be ascending",
+        "message": "line 2 does not exist: the text has 2 lines (valid lines 0 to 1)",
         "instruction": "slnc",
-        "input": "a\nb"
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 2 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> slnc\n\n  Trace (outermost first):\n    → slnc 2 1;  ← failed here\n\n  Parameters:\n    start = 2\n    end   = 1\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
       }
     },
     "line_delete_lines_interval_zero": {
-      "error": {
-        "code": 14,
-        "stage": "execution",
-        "message": "Line numbers start at one",
-        "instruction": "dlni",
-        "input": "0"
-      }
+      "ok": ""
     },
     "line_delete_lines_interval_missing": {
-      "error": {
-        "code": 12,
-        "stage": "execution",
-        "message": "Line 100 does not exist; expected 1..=2",
-        "instruction": "dlni",
-        "input": "a\nb"
-      }
+      "ok": "a\n"
     },
     "line_delete_lines_interval_inverted": {
       "error": {
-        "code": 14,
+        "code": 12,
         "stage": "execution",
-        "message": "Line range must be ascending",
+        "message": "line 2 does not exist: the text has 2 lines (valid lines 0 to 1)",
         "instruction": "dlni",
-        "input": "a\nb"
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 2 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> dlni\n\n  Trace (outermost first):\n    → dlni 2 1;  ← failed here\n\n  Parameters:\n    start = 2\n    end   = 1\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
+      }
+    },
+    "line_delete_line_past_end": {
+      "error": {
+        "code": 12,
+        "stage": "execution",
+        "message": "line 2 does not exist: the text has 2 lines (valid lines 0 to 1)",
+        "instruction": "dln",
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 2 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> dln\n\n  Trace (outermost first):\n    → dln 2;  ← failed here\n\n  Parameters:\n    line = 2\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
+      }
+    },
+    "line_delete_lines_after_past_end": {
+      "error": {
+        "code": 12,
+        "stage": "execution",
+        "message": "line 2 does not exist: the text has 2 lines (valid lines 0 to 1)",
+        "instruction": "dlna",
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 2 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> dlna\n\n  Trace (outermost first):\n    → dlna 2;  ← failed here\n\n  Parameters:\n    line = 2\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
+      }
+    },
+    "line_delete_lines_before_past_end": {
+      "error": {
+        "code": 12,
+        "stage": "execution",
+        "message": "line 2 does not exist: the text has 2 lines (valid lines 0 to 1)",
+        "instruction": "dlnb",
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 2 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> dlnb\n\n  Trace (outermost first):\n    → dlnb 2;  ← failed here\n\n  Parameters:\n    line = 2\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
+      }
+    },
+    "line_insert_line_past_end": {
+      "ok": "a\nb\nx"
+    },
+    "line_replace_line_past_end": {
+      "error": {
+        "code": 12,
+        "stage": "execution",
+        "message": "line 2 does not exist: the text has 2 lines (valid lines 0 to 1)",
+        "instruction": "rln",
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 2 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> rln\n\n  Trace (outermost first):\n    → rln 2 x;  ← failed here\n\n  Parameters:\n    line = 2\n    text = \"x\"\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
+      }
+    },
+    "line_select_lines_past_end": {
+      "error": {
+        "code": 12,
+        "stage": "execution",
+        "message": "line 2 does not exist: the text has 2 lines (valid lines 0 to 1)",
+        "instruction": "slnc",
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 2 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> slnc\n\n  Trace (outermost first):\n    → slnc 2 3;  ← failed here\n\n  Parameters:\n    start = 2\n    end   = 3\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
+      }
+    },
+    "line_delete_lines_interval_past_end": {
+      "error": {
+        "code": 12,
+        "stage": "execution",
+        "message": "line 2 does not exist: the text has 2 lines (valid lines 0 to 1)",
+        "instruction": "dlni",
+        "input": "a\nb",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: line 2 does not exist: the text has 2 lines (valid lines 0 to 1)\n  --> dlni\n\n  Trace (outermost first):\n    → dlni 2 3;  ← failed here\n\n  Parameters:\n    start = 2\n    end   = 3\n\n  Input: a\\nb\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
+      }
+    },
+    "execution_details": {
+      "error": {
+        "code": 12,
+        "stage": "execution",
+        "message": "character index 8 is out of range: the text has 3 characters (valid indices 0 to 2)",
+        "instruction": "dls '[[__COUNTER__ + 8]]';",
+        "input": "abc",
+        "kind": "IndexOutOfRange",
+        "cause": null,
+        "hint": "indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)",
+        "ignorable": true,
+        "report": "error[12] IndexOutOfRange: character index 8 is out of range: the text has 3 characters (valid indices 0 to 2)\n  --> dls '[[__COUNTER__ + 8]]';\n\n  Trace (outermost first):\n      iter 2 times dls '[[__COUNTER__ + 8]]';  · __COUNTER__ = 0 (iteration 1 of 2)\n    → dls 8;  ← failed here\n\n  Parameters:\n    index = 8   (written \"[[__COUNTER__ + 8]]\")\n\n  Input: abc\n\n  Hint: indices count characters, words and lines from 0; the last character is __LEN_CHARS__ - 1 and the last line __LINES__ - 1 (see docs/indices-and-ranges.md)"
+      }
+    },
+    "limit_exceeded": {
+      "error": {
+        "code": 31,
+        "stage": "execution",
+        "message": "`rpt` needs 9 bytes, but the max_generated_bytes limit is 8; raise or remove the limit with overrides.max_generated_bytes in .txfrc (\"unlimited\"), the txf flag, or ExecutionProfile::limits",
+        "instruction": "rpt 3;",
+        "input": "",
+        "kind": "LimitExceededError",
+        "cause": null,
+        "hint": "raise the limit or set it to \"unlimited\": .txfrc overrides, the txf flag or ExecutionProfile::limits; tryi does not ignore limits",
+        "ignorable": false,
+        "report": "error[31] LimitExceededError: `rpt` needs 9 bytes, but the max_generated_bytes limit is 8; raise or remove the limit with overrides.max_generated_bytes in .txfrc (\"unlimited\"), the txf flag, or ExecutionProfile::limits\n  --> rpt 3;\n\n  Trace (outermost first):\n    → rpt 3;  ← failed here\n\n  Parameters:\n    times = 3\n\n  Hint: raise the limit or set it to \"unlimited\": .txfrc overrides, the txf flag or ExecutionProfile::limits; tryi does not ignore limits"
+      }
+    },
+    "pipeline_name": {
+      "ok": "run@cleanup"
+    },
+    "pipeline_name_missing": {
+      "error": {
+        "code": 3,
+        "stage": "execution",
+        "message": "no pipeline is registered with the id `missing`; use the id returned when the pipeline was registered",
+        "instruction": "processor",
+        "input": "missing",
+        "kind": "TokenArrayNotFound",
+        "cause": null,
+        "hint": null,
+        "ignorable": true,
+        "report": "error[3] TokenArrayNotFound: no pipeline is registered with the id `missing`; use the id returned when the pipeline was registered\n  --> processor\n\n  Input: missing"
       }
     }
   }

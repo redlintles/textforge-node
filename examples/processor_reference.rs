@@ -13,24 +13,67 @@ fn hex(text: &str) -> String {
         .map(|byte| format!("{byte:02x}"))
         .collect()
 }
-fn record(name: &str, result: Result<String, BindingError>) {
-    match result {
+/// Every field the Node.js TextForgeError carries, from a portable or a core error.
+struct Fields {
+    code: u16,
+    stage: ErrorStage,
+    message: String,
+    instruction: String,
+    input: String,
+    kind: String,
+    cause: Option<String>,
+    hint: Option<String>,
+    ignorable: bool,
+    report: String,
+}
+impl From<BindingError> for Fields {
+    fn from(e: BindingError) -> Self {
+        Fields {
+            code: e.code,
+            stage: e.stage,
+            message: e.message,
+            instruction: e.instruction,
+            input: e.input,
+            kind: e.details.kind.clone(),
+            cause: e.details.cause.clone(),
+            hint: e.details.hint.clone(),
+            ignorable: e.details.ignorable,
+            report: e.details.report.clone(),
+        }
+    }
+}
+fn optional(value: &Option<String>) -> String {
+    value.as_deref().map_or_else(|| "-".to_owned(), hex)
+}
+fn record<E: Into<Fields>>(name: &str, result: Result<String, E>) {
+    match result.map_err(Into::into) {
         Ok(text) => println!("REF\t{name}\tok\t{}", hex(&text)),
         Err(e) => println!(
-            "REF\t{name}\terror\t{}\t{:?}\t{}\t{}\t{}",
+            "REF\t{name}\terror\t{}\t{:?}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             e.code,
             e.stage,
             hex(&e.message),
             hex(&e.instruction),
-            hex(&e.input)
+            hex(&e.input),
+            hex(&e.kind),
+            optional(&e.cause),
+            optional(&e.hint),
+            e.ignorable,
+            hex(&e.report),
         ),
     }
 }
-fn core_error(stage: ErrorStage, e: TextForgeError) -> BindingError {
-    BindingError {
+/// The fields `BindingError` takes from a core error (independently of the adapter).
+fn core_error(stage: ErrorStage, e: TextForgeError) -> Fields {
+    Fields {
         stage,
         code: e.error_code.get_error_code(),
         message: e.error_code.message().to_string(),
+        kind: e.error_code.name().to_owned(),
+        cause: e.cause().map(str::to_owned),
+        hint: e.error_code.hint().map(str::to_owned),
+        ignorable: e.is_ignorable(),
+        report: e.report().color(false).to_string(),
         instruction: e.instruction.into_owned(),
         input: e.input.into_owned(),
     }
@@ -143,7 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         core.process_all_with_watchers(&id, "x", &mut watchers, &report)
             .map_err(|e| core_error(ErrorStage::Execution, e)),
     );
-    record("report", Ok(std::fs::read_to_string(report)?));
+    record::<Fields>("report", Ok(std::fs::read_to_string(report)?));
     let mut observers = portable::Observers::new();
     observers.set(
         "bad".into(),
@@ -432,6 +475,127 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(|error| core_error(ErrorStage::Execution, error)),
         );
     }
+    {
+        let mut native = TextForgeProcessor::new();
+        let id = native.create_pipeline().delete_line(2)?.build()?;
+        record(
+            "line_delete_line_past_end",
+            native
+                .process_all(&id, "a\nb")
+                .map_err(|error| core_error(ErrorStage::Execution, error)),
+        );
+    }
+    {
+        let mut native = TextForgeProcessor::new();
+        let id = native.create_pipeline().delete_lines_after(2)?.build()?;
+        record(
+            "line_delete_lines_after_past_end",
+            native
+                .process_all(&id, "a\nb")
+                .map_err(|error| core_error(ErrorStage::Execution, error)),
+        );
+    }
+    {
+        let mut native = TextForgeProcessor::new();
+        let id = native.create_pipeline().delete_lines_before(2)?.build()?;
+        record(
+            "line_delete_lines_before_past_end",
+            native
+                .process_all(&id, "a\nb")
+                .map_err(|error| core_error(ErrorStage::Execution, error)),
+        );
+    }
+    {
+        let mut native = TextForgeProcessor::new();
+        let id = native.create_pipeline().insert_line(2, "x")?.build()?;
+        record(
+            "line_insert_line_past_end",
+            native
+                .process_all(&id, "a\nb")
+                .map_err(|error| core_error(ErrorStage::Execution, error)),
+        );
+    }
+    {
+        let mut native = TextForgeProcessor::new();
+        let id = native.create_pipeline().replace_line(2, "x")?.build()?;
+        record(
+            "line_replace_line_past_end",
+            native
+                .process_all(&id, "a\nb")
+                .map_err(|error| core_error(ErrorStage::Execution, error)),
+        );
+    }
+    {
+        let mut native = TextForgeProcessor::new();
+        let id = native.create_pipeline().select_lines(2, 3)?.build()?;
+        record(
+            "line_select_lines_past_end",
+            native
+                .process_all(&id, "a\nb")
+                .map_err(|error| core_error(ErrorStage::Execution, error)),
+        );
+    }
+    {
+        let mut native = TextForgeProcessor::new();
+        let id = native
+            .create_pipeline()
+            .delete_lines_interval(2, 3)?
+            .build()?;
+        record(
+            "line_delete_lines_interval_past_end",
+            native
+                .process_all(&id, "a\nb")
+                .map_err(|error| core_error(ErrorStage::Execution, error)),
+        );
+    }
     // END GENERATED LINE ERROR ORACLE
+    // TextForge 0.4.0: error details of a running instruction, safety limits, names.
+    {
+        let mut plan = PipelinePlan::new();
+        plan.add(InstructionSpec::new(
+            "iter".into(),
+            vec![
+                Argument::Number(2),
+                Argument::Instruction(Box::new(InstructionSpec::new(
+                    "dls".into(),
+                    vec![Argument::Text("[[__COUNTER__ + 8]]".into())],
+                ))),
+            ],
+        ))?;
+        record("execution_details", plan.compile()?.process("abc"));
+    }
+    {
+        let mut profile = textforge::api::ExecutionProfile::balanced();
+        profile.limits.max_generated_bytes = Some(8);
+        let mut native = TextForgeProcessor::new().with_profile(profile);
+        let id = native.create_pipeline().repeat(3)?.build()?;
+        record(
+            "limit_exceeded",
+            native
+                .process_all(&id, "abc")
+                .map_err(|error| core_error(ErrorStage::Execution, error)),
+        );
+    }
+    {
+        let mut native = TextForgeProcessor::new();
+        let id = native
+            .create_pipeline()
+            .add_to_end("@{{__PIPELINE_NAME__}}")?
+            .build()?;
+        native.set_pipeline_name(&id, "cleanup")?;
+        record(
+            "pipeline_name",
+            native
+                .process_all(&id, "run")
+                .map_err(|error| core_error(ErrorStage::Execution, error)),
+        );
+        record(
+            "pipeline_name_missing",
+            native
+                .pipeline_name("missing")
+                .map(str::to_owned)
+                .map_err(|error| core_error(ErrorStage::Execution, error)),
+        );
+    }
     Ok(())
 }

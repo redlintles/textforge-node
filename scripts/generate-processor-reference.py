@@ -42,16 +42,20 @@ def main() -> None:
         if status == "ok":
             rows[name] = {"ok": bytes.fromhex(fields[0]).decode()}
         else:
+            code, stage, message, instruction, input_, kind, cause, hint, ignorable, report = fields
+            decode = lambda value: bytes.fromhex(value).decode()
             rows[name] = {
                 "error": {
-                    "code": int(fields[0]),
-                    "stage": fields[1].lower(),
-                    **{
-                        key: bytes.fromhex(value).decode()
-                        for key, value in zip(
-                            ("message", "instruction", "input"), fields[2:], strict=True
-                        )
-                    },
+                    "code": int(code),
+                    "stage": stage.lower(),
+                    "message": decode(message),
+                    "instruction": decode(instruction),
+                    "input": decode(input_),
+                    "kind": decode(kind),
+                    "cause": None if cause == "-" else decode(cause),
+                    "hint": None if hint == "-" else decode(hint),
+                    "ignorable": ignorable == "true",
+                    "report": decode(report),
                 }
             }
     fixture = (
