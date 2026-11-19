@@ -10,7 +10,7 @@ use crate::{tokens::InstructionMethods, utils::validations::check_chunk_bound_in
 
 use crate::utils::errors::TextForgeError;
 
-/// Slt - Select
+/// `slt {start} {end};` — Keep only the characters `start..=end`.
 ///
 /// Selects a subslice of `input` delimited by `start_index` and `end_index`(inclusive) discarding the rest in the process
 /// If end_index is bigger than the length of the string, the subslice will include up to the last character of `input`
@@ -28,12 +28,17 @@ use crate::utils::errors::TextForgeError;
 /// ```
 #[derive(Clone, Default)]
 pub struct Slt {
+    /// First character or word of the inclusive range.
     pub start_index: usize,
+    /// Last character or word of the inclusive range.
     pub end_index: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Slt {
+    /// Builds `slt {start} {end};` with the given parameters.
+    ///
+    /// Fails if the parameters are invalid (for a range, if `start > end`).
     pub fn new(start_index: usize, end_index: usize) -> Result<Self, TextForgeError> {
         check_chunk_bound_indexes(start_index, end_index, None)?;
         Ok(Slt {
@@ -63,8 +68,11 @@ impl InstructionMethods for Slt {
         let len = input.chars().count();
         let mut end = self.end_index;
 
-        if end > len {
-            end = len - 1;
+        // An end at or past the last character selects up to the end.
+        if end >= len {
+            // Release builds always wrapped here; keep that result without the
+            // debug-build overflow panic on empty input.
+            end = len.wrapping_sub(1);
         }
 
         check_chunk_bound_indexes(self.start_index, end, Some(input.as_ref()))?;
@@ -75,7 +83,7 @@ impl InstructionMethods for Slt {
             .map(|(i, _)| i)
             .unwrap_or(0);
 
-        // Fim EXCLUSIVO: byte do (end_index + 1)º char, ou input.len() se passar do fim
+        // EXCLUSIVE end: the byte of char (end_index + 1), or input.len() past the end
         let end_byte_exclusive = input
             .char_indices()
             .nth(end.saturating_add(1))
@@ -100,8 +108,8 @@ impl InstructionMethods for Slt {
 
         check_vec_len(params, 2, "slt", "")?;
 
-        self.start_index = parse_args!(params, 0, Usize, "Index should be of usize type");
-        self.end_index = parse_args!(params, 1, Usize, "Index should be of usize type");
+        self.start_index = parse_args!(params, 0, Usize, "start");
+        self.end_index = parse_args!(params, 1, Usize, "end");
         self.params = vec![self.start_index.into(), self.end_index.into()];
 
         Ok(())

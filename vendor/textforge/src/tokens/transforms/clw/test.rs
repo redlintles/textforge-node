@@ -71,19 +71,19 @@ mod tests {
     }
 
     #[test]
-    fn transform_trailing_space_edge_case_current_behavior() {
-        // Observação: como o split é por ' ' (espaço literal),
-        // "foo " vira ["foo", ""] e o "último" vira "".
-        // Então o resultado fica "foo " (permanece igual).
+    fn transform_ignores_trailing_whitespace_and_splits_on_any_whitespace() {
+        // Previously only ' ' separated words: "foo " stayed unchanged and
+        // "ab\ncd" capitalized "ab".
         let t = Clw::default();
-        let mut ctx = GlobalExecutionContext::new();
-
-        assert_eq!(
-            t.transform("foo ".into(), Some(&mut ctx))
-                .unwrap()
-                .to_string(),
-            "foo "
-        );
+        for (input, expected) in [
+            ("foo ", "Foo "),
+            ("ab\ncd", "ab\nCd"),
+            ("ab cd \r\n", "ab Cd \r\n"),
+            ("a\u{2003}é", "a\u{2003}É"),
+            ("   ", "   "),
+        ] {
+            assert_eq!(t.transform(input.into(), None).unwrap(), expected);
+        }
     }
 
     #[test]
@@ -108,7 +108,7 @@ mod tests {
     }
 
     // ============================
-    // Bytecode-only tests (separados)
+    // Bytecode-only tests
     // ============================
     #[cfg(feature = "bytecode")]
     mod bytecode_tests {
@@ -125,7 +125,7 @@ mod tests {
             let t = Clw::default();
             let bc = t.to_bytecode().unwrap();
 
-            // Header mínimo: 8 + 4 + 1 = 13 bytes
+            // Minimum header: 8 + 4 + 1 = 13 bytes
             assert!(bc.len() >= 13);
 
             let mut i = 0;
@@ -133,7 +133,7 @@ mod tests {
             let total_size = u64::from_be_bytes(bc[i..i + 8].try_into().unwrap());
             i += 8;
 
-            // total_size = tamanho do "body" (opcode+count+params...)
+            // total_size = size of the body (opcode + count + params...)
             assert_eq!(total_size as usize, bc.len() - 8);
 
             let opcode = u32::from_be_bytes(bc[i..i + 4].try_into().unwrap());

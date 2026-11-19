@@ -11,7 +11,7 @@ use crate::{
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// JCMC - Join to Camel Case
+/// `jcmc;` — Join the words as camelCase.
 ///
 /// If `input` is a string whose words are separated by spaces, join `input` as a camelCase string
 ///
@@ -22,7 +22,11 @@ use crate::parser::params::TextForgeParamTypes;
 ///
 /// let token = Jcmc::default();
 ///
-/// assert_eq!(token.transform("banana laranja cheia de canja".into(),None).unwrap().to_string(), "bananaLaranjaCheiaDeCanja");
+/// assert_eq!(token.transform("banana orange full of jam".into(),None).unwrap().to_string(), "bananaOrangeFullOfJam");
+/// // Each word is lowercased, then every word but the first is capitalized.
+/// assert_eq!(token.transform("Hello World".into(),None).unwrap().to_string(), "helloWorld");
+/// assert_eq!(token.transform("HTTP server".into(),None).unwrap().to_string(), "httpServer");
+/// assert_eq!(token.transform("Élan vital".into(),None).unwrap().to_string(), "élanVital");
 /// ```
 ///
 #[derive(Clone, Default)]
@@ -53,10 +57,13 @@ impl InstructionMethods for Jcmc {
     ) -> Result<Cow<'a, str>, TextForgeError> {
         let mut result = String::with_capacity(input.len());
         for (i, word) in input.split_whitespace().enumerate() {
+            // camelCase: the first word in lowercase, the others with only
+            // their first letter uppercase. Up to 0.3.1 the letters after
+            // the first were copied, so "HTTP server" gave "hTTPServer".
             if i == 0 {
-                result.push_str(word);
+                crate::utils::allocation::lowercase_into(&mut result, word);
             } else {
-                crate::utils::allocation::capitalize_into(&mut result, word);
+                crate::utils::allocation::title_case_into(&mut result, word);
             }
         }
         Ok(result.into())

@@ -10,7 +10,7 @@ use crate::{
 };
 
 use crate::parser::params::TextForgeParamTypes;
-/// RTR - Rotate Right
+/// `rtr {times};` — Rotate the characters `times` positions to the right.
 ///
 /// Rotates `input` to the right `n` times
 ///
@@ -26,11 +26,13 @@ use crate::parser::params::TextForgeParamTypes;
 /// ```
 #[derive(Clone, Default)]
 pub struct Rtr {
+    /// How many times to repeat or rotate.
     pub times: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Rtr {
+    /// Builds `rtr {times};` with the given parameters.
     pub fn new(times: usize) -> Rtr {
         Rtr {
             times,
@@ -82,7 +84,7 @@ impl InstructionMethods for Rtr {
 
         check_vec_len(params, 1, "rtr", "")?;
 
-        self.times = parse_args!(params, 0, Usize, "Index should be of usize type");
+        self.times = parse_args!(params, 0, Usize, "times");
         self.params = vec![self.times.into()];
 
         Ok(())

@@ -1,12 +1,16 @@
 //! Side-effect-free validation rules shared by tree groups and instruction leaves.
 //! Register a rule in `BUILTIN_RULES`; traversal and lowering require no changes.
 use crate::{
+    context::builtins::check_definable,
     globals::table::{QuerySource, QueryTarget, SyntaxToken, TOKEN_TABLE, TargetValue},
     parser::{
         params::{MAX_DEPTH_ASSOC_PAYLOAD, MAX_DEPTH_NORMAL, TextForgeParamTypes},
         resolve_var::{TokenWrapper, ValType},
     },
-    utils::errors::{TextForgeError, TextForgeErrorCode},
+    utils::{
+        errors::{TextForgeError, TextForgeErrorCode},
+        expr::is_numeric_template,
+    },
 };
 
 /// An inherited position in the construction hierarchy, never engine state.
@@ -34,7 +38,9 @@ impl ValidationContext {
         Self {
             depth: self.depth + 1,
             inside_block: self.inside_block || parent_name == "blk",
-            inside_iteration: self.inside_iteration || parent_name == "iter",
+            // `on*` and `tryi` inherit the structural rules of `iter`.
+            inside_iteration: self.inside_iteration
+                || matches!(parent_name, "iter" | "onln" | "onck" | "onlni" | "tryi"),
         }
     }
 }
@@ -143,7 +149,7 @@ impl ValidationRule for NestingRule {
         if context.inside_block && instruction.name == "blk" {
             return Err(TextForgeError::new(
                 TextForgeErrorCode::NestedBlocksNotAllowedError(
-                    "A block cannot contain another block at any descendant depth".into(),
+                    "a block cannot contain another block, at any depth".into(),
                 ),
                 instruction.name,
                 format!("depth={}", context.depth),
@@ -152,7 +158,7 @@ impl ValidationRule for NestingRule {
         if (context.inside_block || context.inside_iteration) && instruction.name == "rmapd" {
             return Err(TextForgeError::new(
                 TextForgeErrorCode::ValidationError(
-                    "Replacement maps may only be defined globally or inside conditionals".into(),
+                    "`rmapd` can only be used at the top level of a pipeline or inside a conditional (`ifdc`)".into(),
                 ),
                 instruction.name,
                 format!("depth={}", context.depth),
@@ -165,7 +171,17 @@ impl ValidationRule for NestingRule {
         });
         if context.depth > maximum {
             return Err(TextForgeError::new(
-                TextForgeErrorCode::ValidationError("Nested token depth exceeded".into()),
+                TextForgeErrorCode::ValidationError(
+                    format!(
+                        "instructions are nested too deeply: at most {maximum} {} allowed here",
+                        if maximum == 1 {
+                            "level is"
+                        } else {
+                            "levels are"
+                        }
+                    )
+                    .into(),
+                ),
                 instruction.name,
                 format!("depth={}, max={maximum}", context.depth),
             ));
@@ -207,13 +223,21 @@ impl ValidationRule for SignatureRule {
                 .collect::<Vec<_>>();
             if expected.len() != instruction.parameters.len() {
                 return Err(TextForgeError::new(
-                    TextForgeErrorCode::InvalidParameters("Parameter count mismatch".into()),
-                    instruction.name,
-                    format!(
-                        "expected={}, got={}",
-                        expected.len(),
-                        instruction.parameters.len()
+                    TextForgeErrorCode::InvalidParameters(
+                        format!(
+                            "`{}` takes {}, but {} given",
+                            instruction.name,
+                            crate::utils::errors::plural(expected.len(), "parameter"),
+                            if instruction.parameters.len() == 1 {
+                                "1 was".to_owned()
+                            } else {
+                                format!("{} were", instruction.parameters.len())
+                            }
+                        )
+                        .into(),
                     ),
+                    instruction.name,
+                    "",
                 ));
             }
             for (index, (parameter, expected)) in
@@ -228,15 +252,36 @@ impl ValidationRule for SignatureRule {
                         Parameter::Literal(TextForgeParamTypes::Usize(_)),
                         SyntaxToken::Usize
                     ) | (Parameter::Instruction, SyntaxToken::Token)
+                        | (
+                            Parameter::Literal(TextForgeParamTypes::Pipeline(_)),
+                            SyntaxToken::Pipeline
+                        )
                         | (Parameter::Reference, _)
+                ) || matches!(
+                    (parameter, expected),
+                    (Parameter::Literal(TextForgeParamTypes::String(text)), SyntaxToken::Usize)
+                        if is_numeric_template(text)
                 );
                 if !compatible {
                     return Err(TextForgeError::new(
                         TextForgeErrorCode::IncompatibleTypeError(
-                            "Literal parameter type mismatch".into(),
+                            format!(
+                                "parameter {} of `{}` must be {}",
+                                index + 1,
+                                instruction.name,
+                                match expected {
+                                    SyntaxToken::String => "text",
+                                    SyntaxToken::Usize =>
+                                        "a non-negative integer (or an expression that gives one)",
+                                    SyntaxToken::Token => "an instruction",
+                                    SyntaxToken::Pipeline => "a joined pipeline",
+                                    SyntaxToken::Literal(_) => "a keyword",
+                                }
+                            )
+                            .into(),
                         ),
                         instruction.name,
-                        format!("parameter={index}, expected={expected:?}"),
+                        "",
                     ));
                 }
             }
@@ -246,7 +291,77 @@ impl ValidationRule for SignatureRule {
 }
 
 /// Ordered policy registry. Add a new rule here after documenting and testing it.
-pub(super) const BUILTIN_RULES: &[&dyn ValidationRule] = &[&NestingRule, &SignatureRule];
+/// Built-in variable names (`__LINES__`, …) cannot be defined by `var`, `val`,
+/// `mutv` or `eval … in`. A name computed at execution time is checked again
+/// when the instruction binds its parameters.
+pub(super) struct ReservedNameRule;
+
+impl ValidationRule for ReservedNameRule {
+    fn check(
+        &self,
+        instruction: &InstructionView<'_>,
+        _context: ValidationContext,
+    ) -> Result<(), TextForgeError> {
+        let position = match instruction.name {
+            "var" | "val" | "mutv" => 0,
+            "eval" => 1,
+            _ => return Ok(()),
+        };
+        if let Some(Parameter::Literal(TextForgeParamTypes::String(name))) =
+            instruction.parameters.get(position)
+        {
+            check_definable(name, instruction.name)?;
+        }
+        Ok(())
+    }
+}
+
+/// `ppjn` takes a literal path: joined pipelines are code, loaded with the
+/// outer pipeline, so the path cannot depend on execution-time values.
+pub(super) struct JoinPathRule;
+
+impl ValidationRule for JoinPathRule {
+    fn check(
+        &self,
+        instruction: &InstructionView<'_>,
+        _context: ValidationContext,
+    ) -> Result<(), TextForgeError> {
+        if instruction.name != "ppjn" {
+            return Ok(());
+        }
+        let literal = match instruction.parameters.first() {
+            Some(Parameter::Literal(TextForgeParamTypes::String(path))) => {
+                !["{{", "}}", "[[", "]]"]
+                    .iter()
+                    .any(|marker| path.contains(marker))
+            }
+            _ => false,
+        };
+        if literal {
+            Ok(())
+        } else {
+            Err(TextForgeError::new(
+                TextForgeErrorCode::ValidationError(
+                    "`ppjn` needs a literal path: it is loaded with the pipeline, before any variable exists, so it cannot contain {{ }} or [[ ]]".into(),
+                ),
+                instruction.name,
+                "path",
+            ))
+        }
+    }
+}
+
+pub(super) const BUILTIN_RULES: &[&dyn ValidationRule] = &[
+    &NestingRule,
+    &SignatureRule,
+    &ReservedNameRule,
+    &JoinPathRule,
+];
+
+/// Rules every parsed instruction must satisfy, whatever its origin (text or
+/// bytecode). Kept apart from [`BUILTIN_RULES`] so parsing does not start
+/// enforcing builder-only structure rules on existing pipelines.
+pub(super) const PARSE_RULES: &[&dyn ValidationRule] = &[&ReservedNameRule, &JoinPathRule];
 
 pub(super) fn check_with_rules(
     instruction: &InstructionView<'_>,

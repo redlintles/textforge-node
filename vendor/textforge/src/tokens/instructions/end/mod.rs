@@ -10,7 +10,20 @@ use crate::{
 #[cfg(feature = "test_access")]
 pub mod test;
 
-/// End - Does nothing
+/// `end;` — Stop the pipeline (or the current block or loop).
+///
+/// `end` stops the innermost thing that is running: the block run by `cblk`,
+/// the loop of `iter`, or, outside both, the pipeline (in a pipeline joined
+/// with `ppjn`, that pipeline only). Inside `ifdc` or an `on*` section it
+/// stops whatever contains that instruction.
+///
+/// ```text
+/// blk b assoc ate x;
+/// blk b assoc end;        // leaves the block
+/// blk b assoc ate y;      // never runs
+/// cblk b;
+/// ate z;                  // runs: "xz"
+/// ```
 #[derive(Clone, Default)]
 pub struct End {
     params: Vec<TextForgeParamTypes>,
@@ -62,11 +75,11 @@ impl InstructionMethods for End {
         context
             .ok_or_else(|| {
                 TextForgeError::new(
-                    crate::utils::errors::TextForgeErrorCode::RequiredContextError(
-                        "Context required for end instruction".into(),
-                    ),
-                    "end",
-                    input.to_string(),
+                                crate::utils::errors::TextForgeErrorCode::RequiredContextError(
+                "`end` needs an execution context to stop the pipeline; run it in a pipeline (TextForgeProcessor) instead of calling transform() without a context".into(),
+            ),
+            "end",
+            "",
                 )
             })?
             .halt();
@@ -75,7 +88,7 @@ impl InstructionMethods for End {
     }
 
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 0, "End", "param parsing error, invalid vec len")?;
+        check_vec_len(params, 0, "end", "")?;
 
         Ok(())
     }

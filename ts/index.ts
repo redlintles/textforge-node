@@ -101,8 +101,9 @@ function numberArg(value: NumberArgument): NumberArgument {
   if (value instanceof Variable) return value;
   integer(value); return value;
 }
-function valueArg(value: ValueArgument): ValueArgument {
-  return typeof value === 'number' || typeof value === 'bigint' ? numberArg(value) : textArg(value);
+/** Rust `val`, `var` and `mut_var` store literal numbers as their decimal text. */
+function valueArg(value: ValueArgument): TextArgument {
+  return typeof value === 'number' || typeof value === 'bigint' ? integer(value).toString() : textArg(value);
 }
 function instructionArg(value: InstructionArgument): Instruction | Variable {
   if (value instanceof Pipeline) return value.asInstruction();

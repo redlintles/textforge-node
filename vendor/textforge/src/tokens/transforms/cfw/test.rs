@@ -57,8 +57,8 @@ mod tests {
         );
     }
 
-    // Se sua função capitalize() lida com espaços/pontuação de um jeito específico,
-    // dá pra ir refinando esses testes depois. Por enquanto é um “smoke test”.
+    // Smoke test; capitalize() handles spacing and punctuation as tested in
+    // utils::transforms.
     #[test]
     fn transform_preserves_rest_of_string_basic_case() {
         let t = Cfw::default();
@@ -94,7 +94,7 @@ mod tests {
     }
 
     // ============================
-    // Bytecode-only tests (separados)
+    // Bytecode-only tests
     // ============================
     #[cfg(feature = "bytecode")]
     mod bytecode_tests {
@@ -111,7 +111,7 @@ mod tests {
             let t = Cfw::default();
             let bc = t.to_bytecode().unwrap();
 
-            // Header mínimo: 8 + 4 + 1 = 13 bytes
+            // Minimum header: 8 + 4 + 1 = 13 bytes
             assert!(bc.len() >= 13);
 
             let mut i = 0;
@@ -119,7 +119,7 @@ mod tests {
             let total_size = u64::from_be_bytes(bc[i..i + 8].try_into().unwrap());
             i += 8;
 
-            // total_size = tamanho do "body" (opcode+count+params...)
+            // total_size = size of the body (opcode + count + params...)
             assert_eq!(total_size as usize, bc.len() - 8);
 
             let opcode = u32::from_be_bytes(bc[i..i + 4].try_into().unwrap());
@@ -128,6 +128,19 @@ mod tests {
 
             let param_count = bc[i] as usize;
             assert_eq!(param_count, 0);
+        }
+
+        #[test]
+        fn leading_whitespace_is_skipped() {
+            // Previously "  ab cd" stayed unchanged.
+            let t = Cfw::default();
+            for (input, expected) in [
+                ("  ab cd", "  Ab cd"),
+                ("\n\tß x", "\n\tSS x"),
+                (" \r\n", " \r\n"),
+            ] {
+                assert_eq!(t.transform(input.into(), None).unwrap(), expected);
+            }
         }
     }
 }

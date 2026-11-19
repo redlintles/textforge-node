@@ -35,8 +35,8 @@ mod tests {
 
     #[test]
     fn transform_pads_right_until_max_len_doc_example() {
-        // "banana" tem 6 chars, max_len=7 => precisa de 1 char de padding.
-        // extend_string("xy", 1) => "x" (pelo exemplo da doc)
+        // "banana" has 6 chars, max_len=7 => 1 char of padding.
+        // extend_string("xy", 1) => "x" (as in the docs example)
         let t = Padr::new("xy", 7);
         let mut ctx = GlobalExecutionContext::new();
 
@@ -50,8 +50,8 @@ mod tests {
 
     #[test]
     fn transform_pads_right_multiple_chars() {
-        // 6 -> 10 precisa de 4 chars
-        // extend_string("xy", 4) => "xyxy" (comportamento esperado de repetição)
+        // 6 -> 10 needs 4 chars
+        // extend_string("xy", 4) => "xyxy" (the text repeats)
         let t = Padr::new("xy", 10);
         let mut ctx = GlobalExecutionContext::new();
 
@@ -103,9 +103,11 @@ mod tests {
 
         let got = t.set_params(&params);
 
-        // parse_args! retorna InvalidParameters com a msg do callsite
+        // parse_args! returns InvalidParameters naming the parameter
         let expected = Err(crate::utils::errors::TextForgeError::new(
-            TextForgeErrorCode::InvalidParameters("Text_to_insert should be of String type".into()),
+            TextForgeErrorCode::InvalidParameters(
+                "parameter 1 (`text`) must be text, but it is a number".into(),
+            ),
             "",
             "",
         ));
@@ -114,7 +116,7 @@ mod tests {
     }
 
     // ============================
-    // Bytecode-only tests (separados)
+    // Bytecode-only tests
     // ============================
     #[cfg(feature = "bytecode")]
     mod bytecode_tests {
@@ -131,7 +133,7 @@ mod tests {
             let t = Padr::new("xy", 7);
             let bc = t.to_bytecode().unwrap();
 
-            // header mínimo: 8 + 4 + 1 = 13
+            // minimum header: 8 + 4 + 1 = 13
             assert!(bc.len() >= 13);
 
             let mut i = 0;
@@ -172,6 +174,30 @@ mod tests {
             i += p2_payload_size;
             assert_eq!(usize::from_be_bytes(p2_payload.try_into().unwrap()), 7);
             assert_eq!(i, i); // Anti unused var warning, fix this for testing purposes on the bytecode size
+        }
+
+        #[test]
+        fn huge_lengths_are_errors_not_panics() {
+            // Previously panicked with "capacity overflow" (or aborted on memory).
+            use crate::tokens::{InstructionMethods, transforms::padr::Padr};
+            for length in [usize::MAX, usize::MAX / 2, usize::MAX / 1024] {
+                let error = Padr::new("é🍌", length)
+                    .transform("x".into(), None)
+                    .unwrap_err();
+                assert!(matches!(
+                    error.error_code,
+                    crate::utils::errors::TextForgeErrorCode::LimitExceededError(_)
+                        | crate::utils::errors::TextForgeErrorCode::ValidationError(_)
+                ));
+            }
+        }
+
+        #[test]
+        fn padding_repeats_whole_characters() {
+            use crate::tokens::{InstructionMethods, transforms::padr::Padr};
+            let output = Padr::new("é🍌x", 8).transform("ab".into(), None).unwrap();
+            assert_eq!(output.chars().count(), 8);
+            assert_eq!(output.matches('🍌').count(), 2);
         }
     }
 }

@@ -14,7 +14,7 @@ use crate::{
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// DLS - Delete Single
+/// `dls {index};` — Delete the character at `index`.
 ///
 /// Delete's a single character specified by `index` in `input`
 ///
@@ -31,11 +31,13 @@ use crate::parser::params::TextForgeParamTypes;
 /// ```
 #[derive(Clone, Default)]
 pub struct Dls {
+    /// The index the instruction applies to.
     pub index: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Dls {
+    /// Builds `dls {index};` with the given parameters.
     pub fn new(index: usize) -> Self {
         Dls {
             index,
@@ -68,10 +70,15 @@ impl InstructionMethods for Dls {
         let (start, ch) = input.char_indices().nth(self.index).ok_or_else(|| {
             TextForgeError::new(
                 crate::utils::errors::TextForgeErrorCode::IndexOutOfRange(
-                    "Invalid character index".into(),
+                    format!(
+                        "character index {} is out of range: the text has {}",
+                        self.index,
+                        crate::utils::errors::plural(input.chars().count(), "character")
+                    )
+                    .into(),
                 ),
-                "dls",
-                input.to_string(),
+                "",
+                crate::utils::errors::input_excerpt(&input),
             )
         })?;
         Ok(crate::utils::allocation::replace(
@@ -86,7 +93,7 @@ impl InstructionMethods for Dls {
 
         check_vec_len(params, 1, "dls", "")?;
 
-        self.index = parse_args!(params, 0, Usize, "Index should be of usize type");
+        self.index = parse_args!(params, 0, Usize, "index");
         self.params = vec![self.index.into()];
 
         Ok(())

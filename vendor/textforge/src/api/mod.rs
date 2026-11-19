@@ -1,3 +1,15 @@
+//! The public API: register pipelines, build them in Rust and run them.
+//!
+//! - [`processor::TextForgeProcessor`] owns registered pipelines and runs them
+//!   ([`processor::TextForgeProcessorMethods`]).
+//! - [`TextForgeBuilderMethods`] holds one method per instruction; a
+//!   [`builder::TextForgeBuilder`] (from
+//!   [`TextForgeProcessor::create_pipeline`](processor::TextForgeProcessor::create_pipeline))
+//!   collects them and registers the pipeline on [`build`](builder::TextForgeBuilder::build).
+//! - [`block_builder`], [`conditional_builder`] and [`ReplaceMapBuilder`] build
+//!   blocks, conditionals and replacement maps inside a builder.
+//! - [`profile`] chooses memory use and safety [`Limits`]; [`portable`] is the
+//!   owned, language-neutral surface used by the bindings.
 #[cfg(feature = "buffered")]
 mod text_buffer;
 #[cfg(feature = "buffered")]
@@ -8,6 +20,8 @@ pub mod builder;
 pub mod conditional_builder;
 pub mod portable;
 pub mod processor;
+pub mod profile;
+pub use profile::{ExecutionProfile, Limits, RcFile};
 pub mod replace_map_builder;
 pub use replace_map_builder::ReplaceMapBuilder;
 
@@ -19,9 +33,17 @@ use crate::tokens::{InstructionMethods, instructions::*, transforms::*};
 use crate::utils::errors::TextForgeError;
 
 // Helper for referencing variables in code
+/// A reference to the variable `var_name`, for builder parameters that should
+/// read a variable at run time instead of a literal (like `{{var_name}}` in text).
 pub fn get_var(var_name: &str) -> ValType {
     ValType::VarRef(var_name.to_string())
 }
+/// One method per instruction, shared by every builder.
+///
+/// Each method appends the instruction to the pipeline being built and returns
+/// the builder, so calls chain. Parameters accept literals or [`get_var`]
+/// references. Errors are reported when the instruction is added (invalid
+/// literal parameters, nesting rules) or when it runs.
 pub trait TextForgeBuilderMethods: Sized {
     /// UNORM - Unicode normalization
     ///
@@ -114,11 +136,13 @@ pub trait TextForgeBuilderMethods: Sized {
         Ok(self)
     }
 
+    /// Appends an already built instruction. Builders implement this; the other
+    /// methods are written in terms of it.
     fn push_token(&mut self, t: impl Into<TokenWrapper>) -> Result<(), TextForgeError>;
 
     /// APL — Append one logical line, preserving the final-terminator convention.
     ///
-    /// Append one logical line, preserving the final-terminator convention. Line numbers start at one; see the logical-line guide.
+    /// Append one logical line, preserving the final-terminator convention. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
@@ -135,12 +159,12 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// DLN — Delete one line, including its terminator.
     ///
-    /// Delete one line, including its terminator. Line numbers start at one; see the logical-line guide.
+    /// Delete one line, including its terminator. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
     /// let mut processor = TextForgeProcessor::new();
-    /// let id = processor.create_pipeline().delete_line(1).unwrap().build().unwrap();
+    /// let id = processor.create_pipeline().delete_line(0).unwrap().build().unwrap();
     /// let input = "a\nb";
     /// assert_eq!(processor.process_all(&id,input).unwrap(), "b");
     /// ```
@@ -152,12 +176,12 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// DLNA — Delete lines after the given line, retaining that line and its terminator.
     ///
-    /// Delete lines after the given line, retaining that line and its terminator. Line numbers start at one; see the logical-line guide.
+    /// Delete lines after the given line, retaining that line and its terminator. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
     /// let mut processor = TextForgeProcessor::new();
-    /// let id = processor.create_pipeline().delete_lines_after(1).unwrap().build().unwrap();
+    /// let id = processor.create_pipeline().delete_lines_after(0).unwrap().build().unwrap();
     /// let input = "a\nb";
     /// assert_eq!(processor.process_all(&id,input).unwrap(), "a\n");
     /// ```
@@ -172,12 +196,12 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// DLNB — Delete lines before the given line, retaining that line.
     ///
-    /// Delete lines before the given line, retaining that line. Line numbers start at one; see the logical-line guide.
+    /// Delete lines before the given line, retaining that line. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
     /// let mut processor = TextForgeProcessor::new();
-    /// let id = processor.create_pipeline().delete_lines_before(2).unwrap().build().unwrap();
+    /// let id = processor.create_pipeline().delete_lines_before(1).unwrap().build().unwrap();
     /// let input = "a\nb";
     /// assert_eq!(processor.process_all(&id,input).unwrap(), "b");
     /// ```
@@ -192,12 +216,12 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// SLNC — Select an inclusive line interval and discard the remaining lines.
     ///
-    /// Select an inclusive line interval and discard the remaining lines. Line numbers start at one; see the logical-line guide.
+    /// Select an inclusive line interval and discard the remaining lines. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
     /// let mut processor = TextForgeProcessor::new();
-    /// let id = processor.create_pipeline().select_lines(2, 2).unwrap().build().unwrap();
+    /// let id = processor.create_pipeline().select_lines(1, 1).unwrap().build().unwrap();
     /// let input = "a\nb\nc";
     /// assert_eq!(processor.process_all(&id,input).unwrap(), "b\n");
     /// ```
@@ -216,12 +240,12 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// DLNI — Delete an inclusive interval of lines and retain the rest.
     ///
-    /// Delete an inclusive interval of lines and retain the rest. Line numbers start at one; see the logical-line guide.
+    /// Delete an inclusive interval of lines and retain the rest. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
     /// let mut processor = TextForgeProcessor::new();
-    /// let id = processor.create_pipeline().delete_lines_interval(2, 2).unwrap().build().unwrap();
+    /// let id = processor.create_pipeline().delete_lines_interval(1, 1).unwrap().build().unwrap();
     /// let input = "a\nb\nc";
     /// assert_eq!(processor.process_all(&id,input).unwrap(), "a\nc");
     /// ```
@@ -238,14 +262,14 @@ pub trait TextForgeBuilderMethods: Sized {
         Ok(self)
     }
 
-    /// INL — Insert before a line; line count plus one appends a line.
+    /// INL — Insert before a line; the line count (one past the last line) appends a line.
     ///
-    /// Insert before a line; line count plus one appends a line. Line numbers start at one; see the logical-line guide.
+    /// Insert before a line; the line count (one past the last line) appends a line. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
     /// let mut processor = TextForgeProcessor::new();
-    /// let id = processor.create_pipeline().insert_line(2, "x").unwrap().build().unwrap();
+    /// let id = processor.create_pipeline().insert_line(1, "x").unwrap().build().unwrap();
     /// let input = "a\nb";
     /// assert_eq!(processor.process_all(&id,input).unwrap(), "a\nx\nb");
     /// ```
@@ -264,7 +288,7 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// NLN — Remove all recognized line terminators without inserting spaces.
     ///
-    /// Remove all recognized line terminators without inserting spaces. Line numbers start at one; see the logical-line guide.
+    /// Remove all recognized line terminators without inserting spaces. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
@@ -281,12 +305,12 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// RLN — Replace a line content, preserving its terminator.
     ///
-    /// Replace a line content, preserving its terminator. Line numbers start at one; see the logical-line guide.
+    /// Replace a line content, preserving its terminator. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
     /// let mut processor = TextForgeProcessor::new();
-    /// let id = processor.create_pipeline().replace_line(2, "x").unwrap().build().unwrap();
+    /// let id = processor.create_pipeline().replace_line(1, "x").unwrap().build().unwrap();
     /// let input = "a\nb";
     /// assert_eq!(processor.process_all(&id,input).unwrap(), "a\nx");
     /// ```
@@ -305,7 +329,7 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// PLN — Prepend one logical line.
     ///
-    /// Prepend one logical line. Line numbers start at one; see the logical-line guide.
+    /// Prepend one logical line. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
@@ -322,7 +346,7 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// DLE — Delete empty lines; lines containing whitespace are retained.
     ///
-    /// Delete empty lines; lines containing whitespace are retained. Line numbers start at one; see the logical-line guide.
+    /// Delete empty lines; lines containing whitespace are retained. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
@@ -339,7 +363,7 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// KLM — Keep lines whose content matches a regular expression.
     ///
-    /// Keep lines whose content matches a regular expression. Line numbers start at one; see the logical-line guide.
+    /// Keep lines whose content matches a regular expression. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
@@ -359,7 +383,7 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// DLM — Delete lines whose content matches a regular expression.
     ///
-    /// Delete lines whose content matches a regular expression. Line numbers start at one; see the logical-line guide.
+    /// Delete lines whose content matches a regular expression. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
@@ -379,7 +403,7 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// REVLN — Reverse line contents while preserving terminators at their original positions.
     ///
-    /// Reverse line contents while preserving terminators at their original positions. Line numbers start at one; see the logical-line guide.
+    /// Reverse line contents while preserving terminators at their original positions. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
@@ -396,7 +420,7 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// UNIQLN — Keep the first occurrence of each exact line content, in original order.
     ///
-    /// Keep the first occurrence of each exact line content, in original order. Line numbers start at one; see the logical-line guide.
+    /// Keep the first occurrence of each exact line content, in original order. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
@@ -413,7 +437,7 @@ pub trait TextForgeBuilderMethods: Sized {
 
     /// JOINLN — Join line contents with a separator, discarding the final terminator.
     ///
-    /// Join line contents with a separator, discarding the final terminator. Line numbers start at one; see the logical-line guide.
+    /// Join line contents with a separator, discarding the final terminator. Line numbers start at 0; see the logical-line guide.
     ///
     /// ```
     /// use textforge::api::{processor::{TextForgeProcessor,TextForgeProcessorMethods},TextForgeBuilderMethods};
@@ -1804,10 +1828,10 @@ pub trait TextForgeBuilderMethods: Sized {
     ///     TextForgeBuilderMethods,
     /// };
     /// let mut processor = TextForgeProcessor::new();
-    /// let id = TextForgeBuilder::new(&mut processor).insert(1, " laranja").unwrap().build().unwrap();
+    /// let id = TextForgeBuilder::new(&mut processor).insert(1, " orange").unwrap().build().unwrap();
     /// let input = "banana";
     ///
-    /// assert_eq!(processor.process_all(&id,&input), Ok("ba laranjanana".to_string()));
+    /// assert_eq!(processor.process_all(&id,&input), Ok("ba orangenana".to_string()));
     /// ```
     fn insert(
         &mut self,
@@ -1840,9 +1864,9 @@ pub trait TextForgeBuilderMethods: Sized {
     /// };
     /// let mut processor = TextForgeProcessor::new();
     /// let id = TextForgeBuilder::new(&mut processor).to_lowercase_word(1).unwrap().build().unwrap();
-    /// let input = "BANANA LARANJA CHEIA DE CANJA";
+    /// let input = "BANANA ORANGE FULL OF JAM";
     ///
-    /// assert_eq!(processor.process_all(&id,&input), Ok("BANANA laranja CHEIA DE CANJA".to_string()));
+    /// assert_eq!(processor.process_all(&id,&input), Ok("BANANA orange FULL OF JAM".to_string()));
     /// ```
     fn to_lowercase_word(
         &mut self,
@@ -1870,9 +1894,9 @@ pub trait TextForgeBuilderMethods: Sized {
     /// };
     /// let mut processor = TextForgeProcessor::new();
     /// let id = TextForgeBuilder::new(&mut processor).to_uppercase_word(1).unwrap().build().unwrap();
-    /// let input = "banana laranja cheia de canja";
+    /// let input = "banana orange full of jam";
     ///
-    /// assert_eq!(processor.process_all(&id,&input), Ok("banana LARANJA cheia de canja".to_string()));
+    /// assert_eq!(processor.process_all(&id,&input), Ok("banana ORANGE full of jam".to_string()));
     /// ```
     fn to_uppercase_word(
         &mut self,
@@ -1902,9 +1926,9 @@ pub trait TextForgeBuilderMethods: Sized {
     /// };
     /// let mut processor = TextForgeProcessor::new();
     /// let id = TextForgeBuilder::new(&mut processor).join_to_kebab_case().unwrap().build().unwrap();
-    /// let input = "banana laranja cheia de canja";
+    /// let input = "banana orange full of jam";
     ///
-    /// assert_eq!(processor.process_all(&id,&input), Ok("banana-laranja-cheia-de-canja".to_string()));
+    /// assert_eq!(processor.process_all(&id,&input), Ok("banana-orange-full-of-jam".to_string()));
     ///
     ///
     fn join_to_kebab_case(&mut self) -> Result<&mut Self, TextForgeError> {
@@ -1931,9 +1955,9 @@ pub trait TextForgeBuilderMethods: Sized {
     /// };
     /// let mut processor = TextForgeProcessor::new();
     /// let id = TextForgeBuilder::new(&mut processor).join_to_snake_case().unwrap().build().unwrap();
-    /// let input = "banana laranja cheia de canja";
+    /// let input = "banana orange full of jam";
     ///
-    /// assert_eq!(processor.process_all(&id,&input), Ok("banana_laranja_cheia_de_canja".to_string()));
+    /// assert_eq!(processor.process_all(&id,&input), Ok("banana_orange_full_of_jam".to_string()));
     ///
     fn join_to_snake_case(&mut self) -> Result<&mut Self, TextForgeError> {
         let tok: Box<dyn InstructionMethods> = Box::new(jsnc::Jsnc::default());
@@ -1959,9 +1983,9 @@ pub trait TextForgeBuilderMethods: Sized {
     /// };
     /// let mut processor = TextForgeProcessor::new();
     /// let id = TextForgeBuilder::new(&mut processor).join_to_camel_case().unwrap().build().unwrap();
-    /// let input = "banana laranja cheia de canja";
+    /// let input = "banana orange full of jam";
     ///
-    /// assert_eq!(processor.process_all(&id,&input), Ok("bananaLaranjaCheiaDeCanja".to_string()));
+    /// assert_eq!(processor.process_all(&id,&input), Ok("bananaOrangeFullOfJam".to_string()));
     /// ```
     fn join_to_camel_case(&mut self) -> Result<&mut Self, TextForgeError> {
         let tok: Box<dyn InstructionMethods> = Box::new(jcmc::Jcmc::default());
@@ -1987,9 +2011,9 @@ pub trait TextForgeBuilderMethods: Sized {
     /// };
     /// let mut processor = TextForgeProcessor::new();
     /// let id = TextForgeBuilder::new(&mut processor).join_to_pascal_case().unwrap().build().unwrap();
-    /// let input = "banana laranja cheia de canja";
+    /// let input = "banana orange full of jam";
     ///
-    /// assert_eq!(processor.process_all(&id,&input), Ok("BananaLaranjaCheiaDeCanja".to_string()));
+    /// assert_eq!(processor.process_all(&id,&input), Ok("BananaOrangeFullOfJam".to_string()));
     /// ```
     fn join_to_pascal_case(&mut self) -> Result<&mut Self, TextForgeError> {
         let tok: Box<dyn InstructionMethods> = Box::new(jpsc::Jpsc::default());
@@ -2078,9 +2102,9 @@ pub trait TextForgeBuilderMethods: Sized {
     /// };
     /// let mut processor = TextForgeProcessor::new();
     /// let id = TextForgeBuilder::new(&mut processor).remove_whitespace().unwrap().build().unwrap();
-    /// let input = "banana laranja cheia de canja";
+    /// let input = "banana orange full of jam";
     ///
-    /// assert_eq!(processor.process_all(&id,&input), Ok("bananalaranjacheiadecanja".to_string()));
+    /// assert_eq!(processor.process_all(&id,&input), Ok("bananaorangefullofjam".to_string()));
     /// ```
     fn remove_whitespace(&mut self) -> Result<&mut Self, TextForgeError> {
         let tok: Box<dyn InstructionMethods> = Box::new(rmws::Rmws::default());
@@ -2236,6 +2260,7 @@ pub trait TextForgeBuilderMethods: Sized {
         self.push_token(tok)?;
         Ok(self)
     }
+    /// MUTV — Change the mutable variable `var_name` (`mutv {name} = {value};`).
     fn mut_var(
         &mut self,
         var_name: impl Into<ValType>,
@@ -2259,6 +2284,8 @@ pub trait TextForgeBuilderMethods: Sized {
         Ok(self)
     }
 
+    /// EVAL — Evaluate `expr` and store the result in `var_name`
+    /// (`eval {expression} in {name};`).
     fn eval(
         &mut self,
         expr: impl Into<ValType>,
@@ -2273,6 +2300,8 @@ pub trait TextForgeBuilderMethods: Sized {
         Ok(self)
     }
 
+    /// ITER — Run `inner` `times` times (`iter {times} times {instruction};`);
+    /// `__COUNTER__` holds the iteration, from 0.
     fn iter(
         &mut self,
         times: impl Into<ValType>,
@@ -2286,12 +2315,245 @@ pub trait TextForgeBuilderMethods: Sized {
         self.push_token(tok)?;
         Ok(self)
     }
+    /// ONLN — Apply one instruction to a single line (base 0).
+    ///
+    /// The instruction receives only the line content, without its terminator,
+    /// so its indices are relative to the line. The terminator is preserved and
+    /// the result may contain any number of lines. See `docs/on-instructions.md`.
+    ///
+    /// ```
+    /// use textforge::api::{processor::{TextForgeProcessor, TextForgeProcessorMethods}, TextForgeBuilderMethods};
+    /// use textforge::tokens::{InstructionMethods, transforms::tbs::Tbs};
+    /// let mut processor = TextForgeProcessor::new();
+    /// let trim: Box<dyn InstructionMethods> = Box::new(Tbs::default());
+    /// let id = processor.create_pipeline().on_line(1, trim).unwrap().build().unwrap();
+    /// assert_eq!(processor.process_all(&id, "  a  \n  b  \n").unwrap(), "  a  \nb\n");
+    /// ```
+    fn on_line(
+        &mut self,
+        line: impl Into<ValType>,
+        inner: impl Into<TokenWrapper>,
+    ) -> Result<&mut Self, TextForgeError> {
+        let token = TokenWrapper::new(
+            Box::new(onln::Onln::default()),
+            Some(vec![
+                line.into(),
+                ValType::Literal(TextForgeParamTypes::Token(inner.into())),
+            ]),
+        );
+        self.push_token(token)?;
+        Ok(self)
+    }
+
+    /// ONCK — Apply one instruction to characters `start..=end` (base 0).
+    ///
+    /// The instruction receives only that chunk, so its indices are relative to
+    /// it. An `end` past the last character is clamped, as in `delete_chunk`.
+    ///
+    /// ```
+    /// use textforge::api::{processor::{TextForgeProcessor, TextForgeProcessorMethods}, TextForgeBuilderMethods};
+    /// use textforge::tokens::{InstructionMethods, transforms::dlf::Dlf};
+    /// let mut processor = TextForgeProcessor::new();
+    /// let first: Box<dyn InstructionMethods> = Box::new(Dlf::default());
+    /// let id = processor.create_pipeline().on_chunk(1, 3, first).unwrap().build().unwrap();
+    /// assert_eq!(processor.process_all(&id, "abcde").unwrap(), "acde");
+    /// ```
+    fn on_chunk(
+        &mut self,
+        start_index: impl Into<ValType>,
+        end_index: impl Into<ValType>,
+        inner: impl Into<TokenWrapper>,
+    ) -> Result<&mut Self, TextForgeError> {
+        let token = TokenWrapper::new(
+            Box::new(onck::Onck::default()),
+            Some(vec![
+                start_index.into(),
+                end_index.into(),
+                ValType::Literal(TextForgeParamTypes::Token(inner.into())),
+            ]),
+        );
+        self.push_token(token)?;
+        Ok(self)
+    }
+
+    /// ONLNI — Apply one instruction to lines `start..=end` (base 0) as one block.
+    ///
+    /// The block keeps its inner terminators; the terminator of the last selected
+    /// line is preserved outside it. The result may change the line count.
+    ///
+    /// ```
+    /// use textforge::api::{processor::{TextForgeProcessor, TextForgeProcessorMethods}, TextForgeBuilderMethods};
+    /// use textforge::tokens::{InstructionMethods, transforms::uniqln::Uniqln};
+    /// let mut processor = TextForgeProcessor::new();
+    /// let unique: Box<dyn InstructionMethods> = Box::new(Uniqln::default());
+    /// let id = processor.create_pipeline().on_line_interval(0, 2, unique).unwrap().build().unwrap();
+    /// assert_eq!(processor.process_all(&id, "b\nb\na\nc").unwrap(), "b\na\nc");
+    /// ```
+    fn on_line_interval(
+        &mut self,
+        start_line: impl Into<ValType>,
+        end_line: impl Into<ValType>,
+        inner: impl Into<TokenWrapper>,
+    ) -> Result<&mut Self, TextForgeError> {
+        let token = TokenWrapper::new(
+            Box::new(onlni::Onlni::default()),
+            Some(vec![
+                start_line.into(),
+                end_line.into(),
+                ValType::Literal(TextForgeParamTypes::Token(inner.into())),
+            ]),
+        );
+        self.push_token(token)?;
+        Ok(self)
+    }
+
+    /// TRYI — Run one instruction and, if it fails, skip it
+    /// (`tryi {instruction};`).
+    ///
+    /// When the instruction fails, the pipeline continues with the text and the
+    /// variables as they were before it; a safety limit is never ignored. The
+    /// debug methods show each ignored error. See
+    /// [`Tryi`](crate::tokens::instructions::tryi::Tryi).
+    ///
+    /// ```
+    /// use textforge::api::{processor::{TextForgeProcessor, TextForgeProcessorMethods}, TextForgeBuilderMethods};
+    /// use textforge::tokens::{InstructionMethods, transforms::dls::Dls};
+    /// let mut processor = TextForgeProcessor::new();
+    /// let delete: Box<dyn InstructionMethods> = Box::new(Dls::new(9));
+    /// let id = processor.create_pipeline().try_ignore(delete)?.build()?;
+    /// assert_eq!(processor.process_all(&id, "abc")?, "abc");
+    /// # Ok::<(), textforge::utils::errors::TextForgeError>(())
+    /// ```
+    fn try_ignore(&mut self, inner: impl Into<TokenWrapper>) -> Result<&mut Self, TextForgeError> {
+        let token = TokenWrapper::new(
+            Box::new(tryi::Tryi::default()),
+            Some(vec![ValType::Literal(TextForgeParamTypes::Token(
+                inner.into(),
+            ))]),
+        );
+        self.push_token(token)?;
+        Ok(self)
+    }
+
+    /// PPJN — Run a whole pipeline from another file (text or bytecode) on the
+    /// current text, in a new execution context, and continue with its result.
+    ///
+    /// The path is a literal, relative to the working directory; the file is
+    /// loaded when the pipeline is built. See [`Ppjn`](crate::tokens::instructions::ppjn::Ppjn).
+    ///
+    /// ```
+    /// use textforge::api::{processor::{TextForgeProcessor, TextForgeProcessorMethods}, TextForgeBuilderMethods};
+    /// let path = std::env::temp_dir().join(format!("ppjn-builder-{}.textforge", std::process::id()));
+    /// std::fs::write(&path, "tua;\n").unwrap();
+    /// let mut processor = TextForgeProcessor::new();
+    /// let id = processor.create_pipeline().pipeline_join(path.to_string_lossy().as_ref())?.build()?;
+    /// assert_eq!(processor.process_all(&id, "abc")?, "ABC");
+    /// # std::fs::remove_file(&path).unwrap();
+    /// # Ok::<(), textforge::utils::errors::TextForgeError>(())
+    /// ```
+    fn pipeline_join(&mut self, path: impl Into<ValType>) -> Result<&mut Self, TextForgeError> {
+        let mut parameters = vec![path.into()];
+        crate::parser::joins::implicit_parameters("ppjn", &mut parameters);
+        let token = TokenWrapper::new(Box::new(ppjn::Ppjn::default()), Some(parameters));
+        self.push_token(token)?;
+        Ok(self)
+    }
+
+    /// WTF — Write the current text to a file and keep it unchanged.
+    ///
+    /// The file is replaced atomically; missing directories are an error. The
+    /// path may use `{{ }}`/`[[ ]]` interpolation. See `docs/file-instructions.md`.
+    ///
+    /// ```
+    /// use textforge::api::{processor::{TextForgeProcessor, TextForgeProcessorMethods}, TextForgeBuilderMethods};
+    /// let path = std::env::temp_dir().join(format!("wtf-builder-{}.txt", std::process::id()));
+    /// let mut processor = TextForgeProcessor::new();
+    /// let id = processor.create_pipeline()
+    ///     .write_to_file(path.to_string_lossy().as_ref())?
+    ///     .add_to_end("!")?
+    ///     .build()?;
+    /// assert_eq!(processor.process_all(&id, "draft")?, "draft!");
+    /// assert_eq!(std::fs::read_to_string(&path).unwrap(), "draft");
+    /// # std::fs::remove_file(&path).unwrap();
+    /// # Ok::<(), textforge::utils::errors::TextForgeError>(())
+    /// ```
+    fn write_to_file(&mut self, path: impl Into<ValType>) -> Result<&mut Self, TextForgeError> {
+        let token = TokenWrapper::new(Box::new(wtf::Wtf::default()), Some(vec![path.into()]));
+        self.push_token(token)?;
+        Ok(self)
+    }
+
+    /// APF — Append the contents of a UTF-8 file to the end of the text.
+    ///
+    /// ```
+    /// use textforge::api::{processor::{TextForgeProcessor, TextForgeProcessorMethods}, TextForgeBuilderMethods};
+    /// let path = std::env::temp_dir().join(format!("apf-builder-{}.txt", std::process::id()));
+    /// std::fs::write(&path, " world").unwrap();
+    /// let mut processor = TextForgeProcessor::new();
+    /// let id = processor.create_pipeline().append_file(path.to_string_lossy().as_ref())?.build()?;
+    /// assert_eq!(processor.process_all(&id, "hello")?, "hello world");
+    /// # std::fs::remove_file(&path).unwrap();
+    /// # Ok::<(), textforge::utils::errors::TextForgeError>(())
+    /// ```
+    fn append_file(&mut self, path: impl Into<ValType>) -> Result<&mut Self, TextForgeError> {
+        let token = TokenWrapper::new(Box::new(apf::Apf::default()), Some(vec![path.into()]));
+        self.push_token(token)?;
+        Ok(self)
+    }
+
+    /// PPF — Prepend the contents of a UTF-8 file to the beginning of the text.
+    ///
+    /// ```
+    /// use textforge::api::{processor::{TextForgeProcessor, TextForgeProcessorMethods}, TextForgeBuilderMethods};
+    /// let path = std::env::temp_dir().join(format!("ppf-builder-{}.txt", std::process::id()));
+    /// std::fs::write(&path, "hello ").unwrap();
+    /// let mut processor = TextForgeProcessor::new();
+    /// let id = processor.create_pipeline().prepend_file(path.to_string_lossy().as_ref())?.build()?;
+    /// assert_eq!(processor.process_all(&id, "world")?, "hello world");
+    /// # std::fs::remove_file(&path).unwrap();
+    /// # Ok::<(), textforge::utils::errors::TextForgeError>(())
+    /// ```
+    fn prepend_file(&mut self, path: impl Into<ValType>) -> Result<&mut Self, TextForgeError> {
+        let token = TokenWrapper::new(Box::new(ppf::Ppf::default()), Some(vec![path.into()]));
+        self.push_token(token)?;
+        Ok(self)
+    }
+
+    /// INF — Insert the contents of a UTF-8 file at the start (index 0) or after the character at
+    /// `index` (base 0), with the index rules and the argument order of
+    /// [`insert`](Self::insert). Up to 0.3.1 the arguments were `(path, index)`.
+    ///
+    /// ```
+    /// use textforge::api::{processor::{TextForgeProcessor, TextForgeProcessorMethods}, TextForgeBuilderMethods};
+    /// let path = std::env::temp_dir().join(format!("inf-builder-{}.txt", std::process::id()));
+    /// std::fs::write(&path, "-").unwrap();
+    /// let mut processor = TextForgeProcessor::new();
+    /// let id = processor.create_pipeline().insert_file(0, path.to_string_lossy().as_ref())?.build()?;
+    /// assert_eq!(processor.process_all(&id, "ab")?, "-ab");
+    /// # std::fs::remove_file(&path).unwrap();
+    /// # Ok::<(), textforge::utils::errors::TextForgeError>(())
+    /// ```
+    fn insert_file(
+        &mut self,
+        index: impl Into<ValType>,
+        path: impl Into<ValType>,
+    ) -> Result<&mut Self, TextForgeError> {
+        let token = TokenWrapper::new(
+            Box::new(inf::Inf::default()),
+            Some(vec![index.into(), path.into()]),
+        );
+        self.push_token(token)?;
+        Ok(self)
+    }
+
+    /// RMP — Remove every match of the regular expression `pattern`.
     fn remove_pattern(&mut self, pattern: impl Into<ValType>) -> Result<&mut Self, TextForgeError> {
         let tok = TokenWrapper::new(Box::new(rmp::Rmp::default()), Some(vec![pattern.into()]));
 
         self.push_token(tok)?;
         Ok(self)
     }
+    /// END — Stop the pipeline here (inside a block or loop, stop that block or loop).
     fn end(&mut self) -> Result<&mut Self, TextForgeError> {
         let tok = TokenWrapper::new(Box::new(end::End::default()), Some(vec![]));
 
@@ -2300,7 +2562,9 @@ pub trait TextForgeBuilderMethods: Sized {
     }
 }
 
+/// Conditionals for builders: instructions that run only when the text contains a value.
 pub trait TextForgeConditionalMethods: TextForgeBuilderMethods {
+    /// IFDC — Each instruction added in `f` runs only if the text contains `value`.
     fn if_do_contains_each<F>(&mut self, value: &str, f: F) -> Result<&mut Self, TextForgeError>
     where
         F: FnOnce(&mut ConditionalBuilderEach) -> Result<(), TextForgeError>,
@@ -2321,7 +2585,9 @@ pub trait TextForgeConditionalMethods: TextForgeBuilderMethods {
     }
 }
 
+/// Blocks for builders: named groups of instructions defined once and run later.
 pub trait TextForgeBlockMethods: TextForgeBuilderMethods {
+    /// BLK — Add the instructions built in `f` to block `block_name`.
     fn block_assoc<F>(
         &mut self,
         block_name: &'static str,
@@ -2342,6 +2608,7 @@ pub trait TextForgeBlockMethods: TextForgeBuilderMethods {
         Ok(self)
     }
 
+    /// CBLK — Run the instructions of block `block_name`.
     fn call_block(&mut self, block_name: &'static str) -> Result<&mut Self, TextForgeError> {
         let mut t: Box<dyn InstructionMethods> = Box::new(cblk::Cblk::default());
 

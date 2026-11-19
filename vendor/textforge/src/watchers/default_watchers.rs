@@ -1,50 +1,63 @@
+//! Ready-made watchers: lengths, deltas and character counts of the current
+//! text. Each takes a [`WatcherContext`] and returns the
+//! value as a string.
 // watchers/default_watchers.rs
 use std::collections::HashSet;
 
 use crate::watchers::WatcherContext;
 
+/// Length of the current text in bytes.
 pub fn current_len_bytes(ctx: WatcherContext) -> String {
     ctx.current.len().to_string()
 }
 
+/// Length of the current text in characters.
 pub fn current_len_chars(ctx: WatcherContext) -> String {
     ctx.current.chars().count().to_string()
 }
 
+/// Change in bytes made by the step.
 pub fn byte_delta(ctx: WatcherContext) -> String {
     let before = ctx.before.len() as i64;
     let after = ctx.current.len() as i64;
     (after - before).to_string()
 }
 
+/// Change in characters made by the step.
 pub fn char_delta(ctx: WatcherContext) -> String {
     let before = ctx.before.chars().count() as i64;
     let after = ctx.current.chars().count() as i64;
     (after - before).to_string()
 }
 
+/// Number of words of the current text.
 pub fn word_count(ctx: WatcherContext) -> String {
     ctx.current.split_whitespace().count().to_string()
 }
 
+/// Change in the number of words made by the step.
 pub fn word_count_delta(ctx: WatcherContext) -> String {
     let before = ctx.before.split_whitespace().count() as i64;
     let after = ctx.current.split_whitespace().count() as i64;
     (after - before).to_string()
 }
 
+/// Number of lines of the current text.
 pub fn line_count(ctx: WatcherContext) -> String {
     ctx.current.lines().count().to_string()
 }
 
+/// Whether the current text is empty (`true` or `false`).
 pub fn is_empty(ctx: WatcherContext) -> String {
     ctx.current.is_empty().to_string()
 }
 
+/// Whether the step left the text unchanged.
 pub fn is_unchanged(ctx: WatcherContext) -> String {
     (ctx.before == ctx.current).to_string()
 }
 
+/// Number of whitespace characters.
 pub fn whitespace_count(ctx: WatcherContext) -> String {
     ctx.current
         .chars()
@@ -53,8 +66,9 @@ pub fn whitespace_count(ctx: WatcherContext) -> String {
         .to_string()
 }
 
-// is_numeric() cobre dígitos unicode além de ASCII; troque por is_ascii_digit()
-// se você quiser um watcher estritamente ASCII.
+// is_numeric() covers Unicode digits beyond ASCII; use is_ascii_digit()
+// for a strictly ASCII watcher.
+/// Number of digits.
 pub fn digit_count(ctx: WatcherContext) -> String {
     ctx.current
         .chars()
@@ -63,6 +77,7 @@ pub fn digit_count(ctx: WatcherContext) -> String {
         .to_string()
 }
 
+/// Number of letters.
 pub fn alpha_count(ctx: WatcherContext) -> String {
     ctx.current
         .chars()
@@ -71,6 +86,7 @@ pub fn alpha_count(ctx: WatcherContext) -> String {
         .to_string()
 }
 
+/// Number of uppercase letters.
 pub fn uppercase_count(ctx: WatcherContext) -> String {
     ctx.current
         .chars()
@@ -79,6 +95,7 @@ pub fn uppercase_count(ctx: WatcherContext) -> String {
         .to_string()
 }
 
+/// Number of lowercase letters.
 pub fn lowercase_count(ctx: WatcherContext) -> String {
     ctx.current
         .chars()
@@ -87,6 +104,7 @@ pub fn lowercase_count(ctx: WatcherContext) -> String {
         .to_string()
 }
 
+/// Number of distinct characters.
 pub fn unique_char_count(ctx: WatcherContext) -> String {
     let set: HashSet<char> = ctx.current.chars().collect();
     set.len().to_string()
@@ -98,7 +116,7 @@ mod tests {
 
     use super::*;
 
-    // src/watchers/default_watchers.rs — helper de teste
+    // test helper
     fn ctx(before: &str, current: &str, instruction: &str) -> WatcherContext {
         WatcherContext {
             current: Arc::from(current),
@@ -110,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_current_len_bytes_counts_utf8_bytes_not_chars() {
-        // 'é' ocupa 2 bytes em UTF-8; "abcdé" = 4 ASCII + 2 bytes = 6 bytes, 5 chars
+        // 'é' takes 2 bytes in UTF-8; "abcdé" = 4 ASCII + 2 bytes = 6 bytes, 5 chars
         let c = ctx("abcd", "abcdé", "add_to_end");
         assert_eq!(current_len_bytes(c), "6");
     }
@@ -135,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_char_delta_negative_on_shrink_no_panic() {
-        // Esse é exatamente o caso que quebrava a implementação original com usize
+        // This is exactly the case that broke the original usize implementation
         let c = ctx("banana", "ba", "trim_both_sides");
         assert_eq!(char_delta(c), "-4");
     }

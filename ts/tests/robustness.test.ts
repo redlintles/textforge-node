@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-import {mkdtempSync,readFileSync,writeFileSync,existsSync,rmSync,readdirSync} from 'node:fs';
+import {mkdirSync,mkdtempSync,readFileSync,writeFileSync,existsSync,rmSync,readdirSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -47,10 +47,12 @@ test('ESM and CommonJS share class identities and can exchange every object type
   assert.equal(processor.processAllWithWatchers(id,'é',observers,join(dir,'report.json')),'🍌é🍌é');
 });
 
-test('all write APIs create new destinations and nested parents',t=>{
+test('write APIs create new files in existing directories and reject missing parents',t=>{
+  // Since TextForge 0.4.0 (adopted by binding 0.2.0) the engine creates the file but
+  // never its parent directories; a missing directory is a persistence error.
   const dir=directory(t),processor=new Processor(),id=processor.register(new Pipeline().addToEnd('!'));
   for(const extension of ['tft','textforge','tfb','textforgebc']){
-    const destination=join(dir,'nested',extension,'pipeline.'+extension);
+    const destination=join(dir,'pipeline.'+extension);
     assert.equal(existsSync(destination),false);
     const binary=['tfb','textforgebc'].includes(extension);
     if(binary)processor.writeToBytecodeFile(id,pathToFileURL(destination));
@@ -58,15 +60,24 @@ test('all write APIs create new destinations and nested parents',t=>{
     const restored=binary?processor.readFromBytecodeFile(destination):processor.getPipelineFromFile(destination);
     assert.equal(processor.processAll(restored,'é'),'é!');
     if(binary)assert.deepEqual([...readFileSync(destination).subarray(0,8)],[38,235,245,8,244,137,1,179]);
+    const missing=join(dir,'missing',extension,'pipeline.'+extension);
+    assert.throws(()=>binary?processor.writeToBytecodeFile(id,missing):processor.writePipelineToFile(id,missing),
+      e=>e instanceof TextForgeError&&e.stage==='persistence'&&/does not exist/.test(e.message));
   }
+  assert.equal(existsSync(join(dir,'missing')),false);
   const observers=new Observers();t.after(()=>observers.close());observers.setBuiltin('size','current_len_chars');observers.scheduleAll('size');
-  processor.processAllWithWatchers(id,'é',observers,join(dir,'reports','new','report.json'));
-  observers.run({current:'é',before:'',instruction:'ate'});observers.writeReport(join(dir,'manual','report.json'));
+  processor.processAllWithWatchers(id,'é',observers,join(dir,'report.json'));
+  assert.ok(readFileSync(join(dir,'report.json'),'utf8').length>0);
+  observers.run({current:'é',before:'',instruction:'ate'});observers.writeReport(join(dir,'manual.json'));
   const buffer=PortableBuffer.fromText('é',new BufferOptions(1,dir));
-  assert.equal(buffer.writeToFile(join(dir,'buffers','new','output.txt')),2n);buffer.close();
+  assert.equal(buffer.writeToFile(join(dir,'output.txt')),2n);buffer.close();
   const input=join(dir,'input.txt');writeFileSync(input,'é');
-  processor.processFile(id,input,join(dir,'processed','output.txt'));
-  assert.deepEqual(processor.processBatch([{pipelineId:id,input,output:join(dir,'batch','output.txt')}]),[null]);
+  processor.processFile(id,input,join(dir,'processed.txt'));
+  assert.equal(readFileSync(join(dir,'processed.txt'),'utf8'),'é!');
+  assert.deepEqual(processor.processBatch([{pipelineId:id,input,output:join(dir,'batch.txt')}]),[null]);
+  // processFile and batches, unlike the pipeline/report/buffer writers, create missing parents (core behavior).
+  assert.deepEqual(processor.processBatch([{pipelineId:id,input,output:join(dir,'nested','batch.txt')}]),[null]);
+  assert.equal(readFileSync(join(dir,'nested','batch.txt'),'utf8'),'é!');
 });
 
 test('text persistence round-trips whitespace, quotes, backslashes, empty and nested arguments',t=>{
@@ -89,23 +100,22 @@ test('text persistence round-trips whitespace, quotes, backslashes, empty and ne
   }
 });
 
-test('invalid writes preserve previous content and multiline values use bytecode losslessly',t=>{
+test('invalid writes preserve previous content and line breaks round-trip in both formats',t=>{
   const dir=directory(t),processor=new Processor();
   const file=join(dir,'pipeline.tft');writeFileSync(file,'original');
   assert.throws(()=>processor.writePipelineToFile('missing',file),e=>e instanceof TextForgeError&&e.stage==='persistence');
   assert.equal(readFileSync(file,'utf8'),'original');
-  const id=processor.register(new Pipeline().addToBeginning('line 1\nline 2'));
-  assert.throws(()=>processor.writePipelineToFile(id,file),e=>e instanceof TextForgeError&&e.stage==='persistence'&&/bytecode/i.test(e.message));
-  assert.equal(readFileSync(file,'utf8'),'original');
+  // TextForge 0.3.1 writes line breaks as escapes inside double quotes.
+  const id=processor.register(new Pipeline().addToBeginning('line 1\nline 2\t"tab"'));
+  processor.writePipelineToFile(id,file);
+  assert.equal(processor.processAll(processor.getPipelineFromFile(file),'é'),'line 1\nline 2\t"tab"é');
   const binary=join(dir,'multiline.tfb');processor.writeToBytecodeFile(id,binary);
-  assert.equal(processor.processAll(processor.readFromBytecodeFile(binary),'é'),'line 1\nline 2é');
-  assert.throws(()=>processor.writePipelineToFile(id,join(dir,'new','pipeline.tft')));
-  assert.equal(existsSync(join(dir,'new')),false);
+  assert.equal(processor.processAll(processor.readFromBytecodeFile(binary),'é'),'line 1\nline 2\t"tab"é');
   const valid=processor.register(new Pipeline().addToEnd('!'));
-  assert.throws(()=>processor.writePipelineToFile(valid,join(dir,'bad','pipeline.txt')),e=>e instanceof TextForgeError&&/\.tft/.test(e.message));
-  assert.equal(existsSync(join(dir,'bad')),false);
+  assert.throws(()=>processor.writePipelineToFile(valid,join(dir,'bad.txt')),e=>e instanceof TextForgeError&&/\.tft/.test(e.message));
+  assert.throws(()=>processor.writeToBytecodeFile(valid,join(dir,'text.tft')),e=>e instanceof TextForgeError&&e.stage==='persistence');
   writeFileSync(join(dir,'blocker'),'data');
-  assert.throws(()=>processor.writeToBytecodeFile(valid,join(dir,'blocker','pipeline.tfb')),e=>e instanceof TextForgeError&&e.stage==='persistence'&&e.instruction!=='canonicalize');
+  assert.throws(()=>processor.writeToBytecodeFile(valid,join(dir,'blocker','pipeline.tfb')),e=>e instanceof TextForgeError&&e.stage==='persistence');
   assert.equal(readFileSync(join(dir,'blocker'),'utf8'),'data');
   assert.deepEqual(readdirSync(dir).sort(),['blocker','multiline.tfb','pipeline.tft']);
 });
@@ -127,19 +137,20 @@ test('invalid JavaScript arguments fail at the public boundary with actionable e
 });
 
 
-test('bytecode preserves reference names outside the textual grammar',t=>{
+test('variable references round-trip through bytecode and text',t=>{
   const dir=directory(t),processor=new Processor();
   const id=processor.register(new Pipeline().var('n_value',2).repeat(new Variable('n_value')));
   const binary=join(dir,'pipeline.tfb');processor.writeToBytecodeFile(id,binary);
   assert.equal(processor.processAll(processor.readFromBytecodeFile(binary),'é'),'éé');
-  assert.throws(()=>processor.writePipelineToFile(id,join(dir,'pipeline.tft')),e=>e instanceof TextForgeError&&/bytecode/.test(e.message));
-  assert.equal(existsSync(join(dir,'pipeline.tft')),false);
+  const file=join(dir,'pipeline.tft');processor.writePipelineToFile(id,file);
+  assert.equal(processor.processAll(processor.getPipelineFromFile(file),'é'),'éé');
 });
 
 test('pipeline export preserves non-UTF-8 Unix destination names',t=>{
   if(process.platform==='win32'){t.skip('Unix native path representation');return;}
   const dir=directory(t),processor=new Processor(),id=processor.register(new Pipeline().addToEnd('🍌'));
-  const bytes=Buffer.concat([Buffer.from(dir+'/'),Buffer.from([255]),Buffer.from('/pipeline.tft')]);
+  const parent=Buffer.concat([Buffer.from(dir+'/'),Buffer.from([255])]);mkdirSync(parent);
+  const bytes=Buffer.concat([parent,Buffer.from('/pipeline.tft')]);
   const destination=FilePath.fromNativeBytes(bytes);
   assert.equal(destination.toText(),null);
   processor.writePipelineToFile(id,destination);
@@ -148,15 +159,16 @@ test('pipeline export preserves non-UTF-8 Unix destination names',t=>{
 });
 
 
-test('buffer spooling creates the configured storage directory and cleans up files',t=>{
-  const dir=directory(t),storage=join(dir,'new','spill directory');
+test('buffer spooling uses an existing storage directory and cleans up files',t=>{
+  const dir=directory(t),storage=join(dir,'spill directory');mkdirSync(storage);
   const buffer=PortableBuffer.fromText('é🍌',new BufferOptions(1,storage));
   assert.equal(buffer.isSpilled(),true);
   assert.deepEqual(buffer.readAt(0,6),Buffer.from('é🍌'));
-  assert.equal(existsSync(storage),true); // Linux may use an unnamed temporary file.
-  buffer.close();assert.deepEqual(readdirSync(storage),[]);
+  buffer.close();assert.deepEqual(readdirSync(storage),[]); // Linux may use an unnamed temporary file.
+  assert.throws(()=>PortableBuffer.fromText('é',new BufferOptions(1,join(dir,'missing'))),TextForgeError);
+  assert.equal(existsSync(join(dir,'missing')),false);
   writeFileSync(join(dir,'blocker'),'data');
-  assert.throws(()=>PortableBuffer.fromText('é',new BufferOptions(1,join(dir,'blocker'))),e=>e instanceof TextForgeError&&e.instruction==='BufferOptions.spill_directory');
+  assert.throws(()=>PortableBuffer.fromText('é',new BufferOptions(1,join(dir,'blocker'))),TextForgeError);
 });
 
 

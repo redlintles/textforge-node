@@ -13,7 +13,7 @@ use crate::{
 };
 
 use crate::parser::params::TextForgeParamTypes;
-/// TUCC - To uppercase Chunk
+/// `tucc {start} {end};` — Uppercase the characters `start..=end`.
 ///
 /// Lowercases every character from a chunk delimited by `start_index` and `end_index`(inclusive) in `input`
 ///
@@ -35,6 +35,9 @@ pub struct Tucc {
 }
 
 impl Tucc {
+    /// Builds `tucc {start} {end};` with the given parameters.
+    ///
+    /// Fails if the parameters are invalid (for a range, if `start > end`).
     pub fn new(start_index: usize, end_index: usize) -> Result<Self, TextForgeError> {
         check_chunk_bound_indexes(start_index, end_index, None)?;
         Ok(Tucc {
@@ -65,16 +68,15 @@ impl InstructionMethods for Tucc {
         input: Cow<'a, str>,
         _: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
-        check_chunk_bound_indexes(self.start_index, self.end_index, Some(input.as_ref()))?;
-
         // Since the user will probably not know the length of the string in the middle of the processing
-        // Better simply adjust end_index to input.len() if its bigger. instead of throwing an "hard to debug" error
+        // Better simply adjust end_index to the last character if its bigger. instead of throwing an "hard to debug" error
         let mut end = self.end_index;
         let total = input.chars().count();
-
-        if end > total {
-            end = input.len();
+        if end >= total {
+            // Wraps on empty input; the check below reports it.
+            end = total.wrapping_sub(1);
         }
+        check_chunk_bound_indexes(self.start_index, end, Some(input.as_ref()))?;
         let mut result = String::with_capacity(input.len());
         for (i, c) in input.chars().enumerate() {
             if i >= self.start_index && i <= end {
@@ -91,8 +93,8 @@ impl InstructionMethods for Tucc {
 
         check_vec_len(params, 2, "tucc", "")?;
 
-        self.start_index = parse_args!(params, 0, Usize, "Index should be of usize type");
-        self.end_index = parse_args!(params, 1, Usize, "Index should be of usize type");
+        self.start_index = parse_args!(params, 0, Usize, "start");
+        self.end_index = parse_args!(params, 1, Usize, "end");
         self.params = vec![self.start_index.into(), self.end_index.into()];
 
         Ok(())

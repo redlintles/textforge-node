@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-/// UNORM — normalize a complete Unicode string to NFC, NFD, NFKC or NFKD.
+/// `unorm {mode};` — Normalize Unicode to `nfc`, `nfd`, `nfkc` or `nfkd`.
 ///
 /// Mode names are lowercase and validated before execution. Unresolved parameter
 /// expressions can be retained for pipeline construction and serialization. Already-normalized
@@ -75,37 +75,38 @@ impl InstructionMethods for Unorm {
             Some(TextForgeParamTypes::String(mode)) => mode.as_str(),
             _ => "nfc",
         };
-        format!("unorm {};\n", shell_words::quote(mode)).into()
+        format!("unorm {};\n", crate::text::line_parser::quote(mode)).into()
     }
 
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(
-            params,
-            1,
-            "unorm",
-            "Expected one Unicode normalization mode",
-        )?;
+        check_vec_len(params, 1, "unorm", "")?;
         let mode = match &params[0] {
-            TextForgeParamTypes::String(value) => match value.as_str() {
-                "nfc" => Some("nfc"),
-                "nfd" => Some("nfd"),
-                "nfkc" => Some("nfkc"),
-                "nfkd" => Some("nfkd"),
-                value if value.contains("{{") || value.contains("[[") => None,
-                _ => {
-                    return Err(TextForgeError::new(
+            TextForgeParamTypes::String(value) => {
+                match value.as_str() {
+                    "nfc" => Some("nfc"),
+                    "nfd" => Some("nfd"),
+                    "nfkc" => Some("nfkc"),
+                    "nfkd" => Some("nfkd"),
+                    value if value.contains("{{") || value.contains("[[") => None,
+                    _ => {
+                        return Err(TextForgeError::new(
                         TextForgeErrorCode::InvalidParameters(
-                            "Expected nfc, nfd, nfkc or nfkd".into(),
+                            format!("unknown normalization form `{value}`; use nfc, nfd, nfkc or nfkd").into(),
                         ),
                         "unorm",
                         value.clone(),
                     ));
+                    }
                 }
-            },
+            }
             _ => {
                 return Err(TextForgeError::new(
                     TextForgeErrorCode::InvalidParameters(
-                        "Unicode normalization mode must be text".into(),
+                        format!(
+                            "the normalization form must be text, but it is {}",
+                            params[0].kind_name()
+                        )
+                        .into(),
                     ),
                     "unorm",
                     format!("{:?}", params[0]),
@@ -125,7 +126,7 @@ impl InstructionMethods for Unorm {
         let mode = self.mode.ok_or_else(|| {
             TextForgeError::new(
                 TextForgeErrorCode::InvalidParameters(
-                    "Unresolved Unicode normalization mode".into(),
+                    "the normalization form was never set: the parameters were not resolved".into(),
                 ),
                 "unorm",
                 match self.params.first() {

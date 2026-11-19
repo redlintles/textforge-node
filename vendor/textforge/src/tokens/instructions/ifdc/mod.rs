@@ -15,7 +15,7 @@ use crate::utils::errors::TextForgeError;
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// Ifdc - If Do Contains
+/// `ifdc {text} do {instruction};` — Run `instruction` if the text contains `text`.
 ///
 /// if `input` contains `text`, the `inner` token will be executed, otherwise `input` is returned with no changes
 ///
@@ -26,9 +26,9 @@ use crate::parser::params::TextForgeParamTypes;
 ///
 /// let token = Ifdc::new(
 ///     "xy",
-///     (Box::new(Atb::new("laranja")) as Box<dyn InstructionMethods>).into()
+///     (Box::new(Atb::new("orange")) as Box<dyn InstructionMethods>).into()
 /// );
-/// assert_eq!(token.transform("larryxy".into(), None).unwrap().to_string(), "laranjalarryxy"); // Adds laranja to the beginning
+/// assert_eq!(token.transform("larryxy".into(), None).unwrap().to_string(), "orangelarryxy"); // Adds orange to the beginning
 /// assert_eq!(token.transform("banana".into(), None).unwrap().to_string(), "banana"); // Does nothing
 ///
 /// ```
@@ -40,6 +40,7 @@ pub struct Ifdc {
 }
 
 impl Ifdc {
+    /// Builds `ifdc {text} do {instruction};` with the given parameters.
     pub fn new(text: &str, inner: TokenWrapper) -> Self {
         Ifdc {
             text: text.to_string(),
@@ -60,6 +61,10 @@ impl InstructionMethods for Ifdc {
         format!("ifdc {} do {}", self.text, self.inner.to_textforge_line()).into()
     }
 
+    // Bound state is immutable; only the execution context changes.
+    fn supports_preparation(&self) -> bool {
+        true
+    }
     fn get_string_repr(&self) -> &'static str {
         "ifdc"
     }
@@ -88,17 +93,15 @@ impl InstructionMethods for Ifdc {
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
         use crate::{parse_args, utils::validations::check_vec_len};
 
-        use crate::parser::params::TextForgeParamTypesJoin;
+        check_vec_len(params, 2, "ifdc", "")?;
 
-        check_vec_len(params, 2, "ifdc", params.join(""))?;
+        self.text = parse_args!(params, 0, String, "text");
 
-        self.text = parse_args!(params, 0, String, "");
-
-        self.inner = parse_args!(params, 1, Token, "");
+        self.inner = parse_args!(params, 1, Token, "instruction");
 
         self.params = vec![
-            TextForgeParamTypes::String(parse_args!(params, 0, String, "")),
-            TextForgeParamTypes::Token(parse_args!(params, 1, Token, "")),
+            TextForgeParamTypes::String(parse_args!(params, 0, String, "text")),
+            TextForgeParamTypes::Token(parse_args!(params, 1, Token, "instruction")),
         ];
 
         Ok(())

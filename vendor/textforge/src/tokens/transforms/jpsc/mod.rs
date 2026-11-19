@@ -11,7 +11,7 @@ use crate::{
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// JPSC - Join to PascalCase
+/// `jpsc;` — Join the words as PascalCase.
 ///
 /// If `input` is a string whose words are separated by spaces, join `input` as a PascalCase string
 ///
@@ -22,7 +22,9 @@ use crate::parser::params::TextForgeParamTypes;
 ///
 /// let token = Jpsc::default();
 ///
-/// assert_eq!(token.transform("banana laranja cheia de canja".into(),None).unwrap().to_string(), "BananaLaranjaCheiaDeCanja");
+/// assert_eq!(token.transform("banana orange full of jam".into(),None).unwrap().to_string(), "BananaOrangeFullOfJam");
+/// // Each word is lowercased, then capitalized.
+/// assert_eq!(token.transform("HTTP server".into(),None).unwrap().to_string(), "HttpServer");
 /// ```
 ///
 #[derive(Clone, Default)]
@@ -52,8 +54,10 @@ impl InstructionMethods for Jpsc {
         _: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
         let mut result = String::with_capacity(input.len());
+        // Only the first letter of each word is uppercase. Up to 0.3.1 the
+        // letters after it were copied, so "HTTP server" gave "HTTPServer".
         for word in input.split_whitespace() {
-            crate::utils::allocation::capitalize_into(&mut result, word);
+            crate::utils::allocation::title_case_into(&mut result, word);
         }
         Ok(result.into())
     }

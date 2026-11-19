@@ -6,9 +6,9 @@ use crate::{
 };
 use std::borrow::Cow;
 
-/// APL — Append one logical line, preserving the final-terminator convention.
+/// `apl {text};` — Append a line.
 ///
-/// Uses one-based indices and shared logical-line semantics. See `docs/lines.md`.
+/// Uses the shared logical-line semantics. See `docs/lines.md`.
 ///
 /// ```
 /// use textforge::tokens::{InstructionMethods, transforms::apl::Apl};
@@ -21,7 +21,7 @@ pub struct Apl {
     params: Vec<TextForgeParamTypes>,
 }
 impl Apl {
-    /// Construct `apl`. Line indices are one-based.
+    /// Construct `apl`.
     pub fn new(text: &str) -> Result<Self, TextForgeError> {
         let mut token = Self::default();
         token.set_params(&[text.to_owned().into()])?;
@@ -50,7 +50,9 @@ impl InstructionMethods for Apl {
         let mut parts = vec![self.get_string_repr().to_owned()];
         for parameter in &self.params {
             parts.push(match parameter {
-                TextForgeParamTypes::String(value) => shell_words::quote(value).into_owned(),
+                TextForgeParamTypes::String(value) => {
+                    crate::text::line_parser::quote(value).into_owned()
+                }
                 TextForgeParamTypes::Usize(value) => value.to_string(),
                 _ => String::new(),
             });
@@ -58,8 +60,8 @@ impl InstructionMethods for Apl {
         format!("{};\n", parts.join(" ")).into()
     }
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 1, "apl", "Invalid line instruction arity")?;
-        let text = crate::parse_args!(params, 0, String, "Expected String");
+        check_vec_len(params, 1, "apl", "")?;
+        let text = crate::parse_args!(params, 0, String, "text");
         if text.chars().any(crate::utils::lines::is_break) {
             return Err(invalid("apl", "Expected a single line", &text));
         }

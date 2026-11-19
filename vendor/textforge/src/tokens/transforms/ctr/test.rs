@@ -44,7 +44,7 @@ mod tests {
 
     #[test]
     fn transform_capitalizes_only_inside_range() {
-        // indices por split_whitespace():
+        // indices from split_whitespace():
         // 0: "aa", 1:"bb", 2:"cc", 3:"dd"
         let t = Ctr::new(1, 2).unwrap();
         let mut ctx = GlobalExecutionContext::new();
@@ -59,8 +59,8 @@ mod tests {
 
     #[test]
     fn transform_end_index_is_clamped_when_too_big() {
-        // total words = 3, end_index = 999 => clamp para total (3)
-        // range vira 1..=3, então capitaliza índices 1 e 2 (3 não existe)
+        // total words = 3, end_index = 999 => clamped to the total (3)
+        // the range becomes 1..=3, so indices 1 and 2 are capitalized (3 does not exist)
         let t = Ctr::new(1, 999).unwrap();
         let mut ctx = GlobalExecutionContext::new();
 
@@ -73,19 +73,23 @@ mod tests {
     }
 
     #[test]
-    fn transform_empty_input_stays_empty() {
+    fn transform_errors_on_text_without_words() {
+        // Before, empty and whitespace-only texts were returned unchanged,
+        // although `cts` and `tucw` fail there: word 0 does not exist.
         let t = Ctr::new(0, 1).unwrap();
         let mut ctx = GlobalExecutionContext::new();
-
-        assert_eq!(
-            t.transform("".into(), Some(&mut ctx)).unwrap().to_string(),
-            ""
-        );
+        for input in ["", " \t\r\n", "\u{2003}"] {
+            let error = t.transform(input.into(), Some(&mut ctx)).unwrap_err();
+            assert!(
+                matches!(error.error_code, TextForgeErrorCode::IndexOutOfRange(_)),
+                "{input:?}: {error:?}"
+            );
+        }
     }
 
     #[test]
     fn transform_errors_when_start_out_of_bounds_for_input_words() {
-        let t = Ctr::new(5, 6).unwrap(); // relação ok, mas input tem poucas palavras
+        let t = Ctr::new(5, 6).unwrap(); // the bounds are ordered, but the input has too few words
         let mut ctx = GlobalExecutionContext::new();
 
         let got: Result<Cow<'_, str>, TextForgeError> =
@@ -127,7 +131,9 @@ mod tests {
         let got = t.set_params(&params);
 
         let expected = Err(crate::utils::errors::TextForgeError::new(
-            TextForgeErrorCode::InvalidParameters("Index should be of usize type".into()),
+            TextForgeErrorCode::InvalidParameters(
+                "parameter 1 (`start`) must be a non-negative integer, but it is text".into(),
+            ),
             "",
             "",
         ));
@@ -136,7 +142,7 @@ mod tests {
     }
 
     // ============================
-    // Bytecode-only tests (separados)
+    // Bytecode-only tests
     // ============================
     #[cfg(feature = "bytecode")]
     mod bytecode_tests {
@@ -154,7 +160,7 @@ mod tests {
             let t = Ctr::new(2, 7).unwrap();
             let bc = t.to_bytecode().unwrap();
 
-            // header mínimo: 8 + 4 + 1 = 13
+            // minimum header: 8 + 4 + 1 = 13
             assert!(bc.len() >= 13);
 
             let mut i = 0;
@@ -197,6 +203,35 @@ mod tests {
                 TextForgeParamTypes::Usize(n) => assert_eq!(n, 7),
                 _ => panic!("Expected Usize param #2"),
             }
+        }
+
+        #[test]
+        fn start_counts_words_not_characters() {
+            // Previously reported "Start index must be smaller than end index".
+            use crate::tokens::{InstructionMethods, transforms::ctr::Ctr};
+            let error = Ctr::new(2, 3)
+                .unwrap()
+                .transform("aa bb".into(), None)
+                .unwrap_err();
+            assert!(matches!(
+                error.error_code,
+                crate::utils::errors::TextForgeErrorCode::IndexOutOfRange(_)
+            ));
+            let token = Ctr::new(1, 9).unwrap();
+            assert_eq!(token.transform("aa bb".into(), None).unwrap(), "aa Bb");
+        }
+
+        #[test]
+        fn line_breaks_and_spacing_are_preserved() {
+            // Previously the text was rebuilt with single spaces, joining lines.
+            use crate::tokens::{InstructionMethods, transforms::ctr::Ctr};
+            let token = Ctr::new(1, 3).unwrap();
+            assert_eq!(
+                token
+                    .transform("linha um\nlinha  dois\r\n".into(), None)
+                    .unwrap(),
+                "linha Um\nLinha  Dois\r\n"
+            );
         }
     }
 }

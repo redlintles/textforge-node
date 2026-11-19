@@ -10,12 +10,12 @@ use crate::{
 };
 
 use crate::parser::params::TextForgeParamTypes;
-/// Token `Clw` — Capitalize Last Word
+/// `clw;` — Capitalize the last word.
 ///
 /// Capitalizes the last word of `input`
 ///
-/// This is achieved by splitting the input by whitespace, reversing the resulting vector,
-/// capitalizing the first word, reversing it back, and rejoining into a single string.
+/// Words are separated by any whitespace; trailing whitespace is ignored and
+/// the rest of the text, separators included, is kept unchanged.
 ///
 /// # Example
 ///
@@ -46,9 +46,15 @@ impl InstructionMethods for Clw {
         input: Cow<'a, str>,
         _: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
-        let start = input.rfind(' ').map_or(0, |i| i + 1);
-        let mut chars = input[start..].chars();
-        let Some(first) = chars.next() else {
+        // The last word follows the last whitespace before any trailing
+        // whitespace (any Unicode whitespace, as `split_whitespace` defines).
+        let trimmed = input.trim_end();
+        let start = trimmed
+            .char_indices()
+            .rev()
+            .find(|(_, c)| c.is_whitespace())
+            .map_or(0, |(i, c)| i + c.len_utf8());
+        let Some(first) = trimmed[start..].chars().next() else {
             return Ok(input);
         };
         let replacement: String = first.to_uppercase().collect();
@@ -63,9 +69,7 @@ impl InstructionMethods for Clw {
         "clw;\n".into()
     }
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        use crate::parser::params::TextForgeParamTypesJoin;
-
-        check_vec_len(params, 0, "clw", params.join(""))?;
+        check_vec_len(params, 0, "clw", "")?;
         Ok(())
     }
     #[cfg(feature = "bytecode")]

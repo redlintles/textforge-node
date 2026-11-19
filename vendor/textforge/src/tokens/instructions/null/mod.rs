@@ -10,7 +10,7 @@ use crate::{
 #[cfg(feature = "test_access")]
 pub mod test;
 
-/// Null - Does nothing
+/// `null;` — Do nothing.
 #[derive(Clone, Default)]
 pub struct Null {
     params: Vec<TextForgeParamTypes>,
@@ -54,7 +54,7 @@ impl InstructionMethods for Null {
     }
 
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 0, "null", "param parsing error, invalid vec len")?;
+        check_vec_len(params, 0, "null", "")?;
 
         Ok(())
     }

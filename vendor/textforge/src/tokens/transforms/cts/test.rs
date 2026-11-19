@@ -66,8 +66,8 @@ mod tests {
     }
 
     #[test]
-    fn transform_collapses_whitespace_due_to_split_whitespace() {
-        // split_whitespace normaliza espaços/tabs/newlines
+    fn transform_keeps_the_original_separators() {
+        // Previously the text was rebuilt with single spaces ("foo Bar").
         let t = Cts::new(1);
         let mut ctx = GlobalExecutionContext::new();
 
@@ -75,7 +75,7 @@ mod tests {
             t.transform("foo   bar".into(), Some(&mut ctx))
                 .unwrap()
                 .to_string(),
-            "foo Bar"
+            "foo   Bar"
         );
     }
 
@@ -118,7 +118,9 @@ mod tests {
         let got = t.set_params(&params);
 
         let expected = Err(crate::utils::errors::TextForgeError::new(
-            TextForgeErrorCode::InvalidParameters("Index should be of usize type".into()),
+            TextForgeErrorCode::InvalidParameters(
+                "parameter 1 (`index`) must be a non-negative integer, but it is text".into(),
+            ),
             "",
             "",
         ));
@@ -127,7 +129,7 @@ mod tests {
     }
 
     // ============================
-    // Bytecode-only tests (separados)
+    // Bytecode-only tests
     // ============================
     #[cfg(feature = "bytecode")]
     mod bytecode_tests {
@@ -145,7 +147,7 @@ mod tests {
             let t = Cts::new(7);
             let bc = t.to_bytecode().unwrap();
 
-            // header mínimo: 8 + 4 + 1 = 13
+            // minimum header: 8 + 4 + 1 = 13
             assert!(bc.len() >= 13);
 
             let mut i = 0;
@@ -174,6 +176,35 @@ mod tests {
                 TextForgeParamTypes::Usize(n) => assert_eq!(n, 7),
                 _ => panic!("Expected Usize param"),
             }
+        }
+
+        #[test]
+        fn index_counts_words_not_characters() {
+            // Previously `cts 3` on "ab cd" (2 words, 5 characters) returned the
+            // text unchanged instead of an error.
+            use crate::tokens::{InstructionMethods, transforms::cts::Cts};
+            let error = Cts::new(3).transform("ab cd".into(), None).unwrap_err();
+            assert!(matches!(
+                error.error_code,
+                crate::utils::errors::TextForgeErrorCode::IndexOutOfRange(_)
+            ));
+            assert_eq!(
+                Cts::new(1).transform("ab cd".into(), None).unwrap(),
+                "ab Cd"
+            );
+        }
+
+        #[test]
+        fn line_breaks_and_spacing_are_preserved() {
+            // Previously the text was rebuilt with single spaces, joining lines.
+            use crate::tokens::{InstructionMethods, transforms::cts::Cts};
+            let token = Cts::new(1);
+            assert_eq!(
+                token
+                    .transform("linha um\nlinha  dois\r\n".into(), None)
+                    .unwrap(),
+                "linha Um\nlinha  dois\r\n"
+            );
         }
     }
 }

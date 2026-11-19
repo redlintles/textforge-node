@@ -11,7 +11,7 @@ use crate::{
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// Token `Atb` — Add to Beginning
+/// `atb {text};` — Add `text` to the beginning.
 ///
 /// Adds `text` to the beginning of `input`
 ///
@@ -29,11 +29,13 @@ use crate::parser::params::TextForgeParamTypes;
 /// ```
 #[derive(Clone, Default)]
 pub struct Atb {
+    /// The text to add or insert.
     pub text: String,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Atb {
+    /// Builds `atb {text};` with the given parameters.
     pub fn new(text: &str) -> Self {
         Atb {
             text: text.to_string(),
@@ -77,11 +79,10 @@ impl InstructionMethods for Atb {
 
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
         use crate::parse_args;
-        use crate::parser::params::TextForgeParamTypesJoin;
 
-        check_vec_len(params, 1, "atb", params.join(""))?;
+        check_vec_len(params, 1, "atb", "")?;
 
-        self.text = parse_args!(params, 0, String, "Text should be of string type");
+        self.text = parse_args!(params, 0, String, "text");
 
         self.params = vec![self.text.to_string().into()];
 

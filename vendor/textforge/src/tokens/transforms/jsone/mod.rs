@@ -11,7 +11,7 @@ use crate::parser::params::TextForgeParamTypes;
 use crate::utils::errors::{TextForgeError, TextForgeErrorCode};
 use crate::utils::validations::check_vec_len;
 
-/// Jsone - Json Escape
+/// `jsone;` — Escape as a JSON string.
 ///
 /// Escapes JSON Special Characters in `input` with serde_json::to_string
 ///
@@ -52,11 +52,13 @@ impl InstructionMethods for Jsone {
         input: Cow<'a, str>,
         _: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
-        let result = serde_json::to_string(input.as_ref()).map_err(|_| {
+        let result = serde_json::to_string(input.as_ref()).map_err(|error| {
             TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Failed to serialize to JSON".into()),
-                "serde_json::to_string".to_string(),
-                input.to_string(),
+                TextForgeErrorCode::TextParsingError(
+                    format!("the text could not be escaped as a JSON string: {error}").into(),
+                ),
+                "jsone",
+                crate::utils::errors::input_excerpt(&input),
             )
         })?;
 

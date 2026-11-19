@@ -38,22 +38,33 @@ fn registered() -> (PortableProcessor, String) {
 }
 
 #[test]
-fn text_and_bytecode_exports_create_new_files_and_parent_directories() {
+fn text_and_bytecode_exports_create_new_files_but_not_parent_directories() {
+    // TextForge 0.4.0 creates a missing destination file, never its directory.
     let directory = Directory::new();
     let (mut processor, id) = registered();
     for extension in ["textforge", "tft", "textforgebc", "tfb"] {
-        let filename = format!("nested/{extension}/pipeline.{extension}");
+        let filename = format!("pipeline.{extension}");
         let path = directory.path(&filename);
         assert!(!directory.0.join(&filename).exists());
-        let restored = if matches!(extension, "textforge" | "tft") {
-            processor.write_pipeline_to_file(&id, &path).unwrap();
-            processor.get_pipeline_from_file(&path).unwrap()
-        } else {
+        let binary = matches!(extension, "textforgebc" | "tfb");
+        let restored = if binary {
             processor.write_to_bytecode_file(&id, &path).unwrap();
             processor.read_from_bytecode_file(&path).unwrap()
+        } else {
+            processor.write_pipeline_to_file(&id, &path).unwrap();
+            processor.get_pipeline_from_file(&path).unwrap()
         };
         assert_eq!(processor.process_all(&restored, "é").unwrap(), "é🍌");
+        let nested = directory.path(&format!("nested/{extension}/pipeline.{extension}"));
+        let error = if binary {
+            processor.write_to_bytecode_file(&id, &nested)
+        } else {
+            processor.write_pipeline_to_file(&id, &nested)
+        }
+        .unwrap_err();
+        assert_eq!(format!("{:?}", error.stage), "Persistence");
     }
+    assert!(!directory.0.join("nested").exists());
 }
 
 #[test]
@@ -101,29 +112,23 @@ fn invalid_outputs_do_not_create_files_or_destroy_existing_content() {
 }
 
 #[test]
-fn a_serialization_failure_preserves_destination_and_creates_no_placeholder() {
+fn line_breaks_round_trip_through_text_pipelines() {
+    // TextForge 0.3.1 writes control characters as escapes inside double quotes.
     let directory = Directory::new();
     let mut processor = PortableProcessor::new();
     let id = processor
         .add_transform(vec![InstructionSpec::new(
             "atb".into(),
-            vec![Argument::Text("a\nb".into())],
+            vec![Argument::Text("a\nb\t\"c\"".into())],
         )])
         .unwrap();
-    let existing = directory.0.join("pipeline.textforge");
-    fs::write(&existing, "original").unwrap();
-    assert!(
-        processor
-            .write_pipeline_to_file(&id, &directory.path("pipeline.textforge"))
-            .is_err()
+    let path = directory.path("pipeline.textforge");
+    processor.write_pipeline_to_file(&id, &path).unwrap();
+    let restored = processor.get_pipeline_from_file(&path).unwrap();
+    assert_eq!(
+        processor.process_all(&restored, "é").unwrap(),
+        "a\nb\t\"c\"é"
     );
-    assert_eq!(fs::read_to_string(existing).unwrap(), "original");
-    assert!(
-        processor
-            .write_pipeline_to_file(&id, &directory.path("new/pipeline.textforge"))
-            .is_err()
-    );
-    assert!(!directory.0.join("new").exists());
 }
 
 #[test]

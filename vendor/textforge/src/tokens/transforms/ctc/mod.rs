@@ -9,7 +9,7 @@ use crate::utils::validations::check_vec_len;
 use crate::{tokens::InstructionMethods, utils::validations::check_chunk_bound_indexes};
 
 use crate::parser::params::TextForgeParamTypes;
-/// Token `Ctc` — Capitalize Chunk
+/// `ctc {start} {end};` — Capitalize the words in the characters `start..=end`.
 ///
 /// Capitalizes every word in a character slice of the input, defined by `start_index` and `end_index` (inclusive).
 ///
@@ -29,12 +29,17 @@ use crate::parser::params::TextForgeParamTypes;
 /// ```
 #[derive(Clone, Default)]
 pub struct Ctc {
+    /// First character or word of the inclusive range.
     pub start_index: usize,
+    /// Last character or word of the inclusive range.
     pub end_index: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Ctc {
+    /// Builds `ctc {start} {end};` with the given parameters.
+    ///
+    /// Fails if the parameters are invalid (for a range, if `start > end`).
     pub fn new(start_index: usize, end_index: usize) -> Result<Self, TextForgeError> {
         check_chunk_bound_indexes(start_index, end_index, None)?;
         Ok(Ctc {
@@ -65,27 +70,23 @@ impl InstructionMethods for Ctc {
 
         let mut end = self.end_index;
 
-        if end > len {
-            end = len - 1;
+        // An end at or past the last character selects up to the end.
+        if end >= len {
+            // Release builds always wrapped here; keep that result without the
+            // debug-build overflow panic on empty input.
+            end = len.wrapping_sub(1);
         }
 
         check_chunk_bound_indexes(self.start_index, end, Some(&input))?;
 
         // Convert char indices to byte indices
-        let start_byte = input
-            .char_indices()
-            .nth(self.start_index)
-            .map(|(byte_idx, _)| byte_idx)
-            .unwrap(); // safe: start_index < total_chars
+        let start_byte =
+            crate::utils::transforms::get_safe_utf8_char_index(self.start_index, &input)?;
 
         let end_byte = if end + 1 >= len {
             input.len()
         } else {
-            input
-                .char_indices()
-                .nth(end + 1)
-                .map(|(byte_idx, _)| byte_idx)
-                .unwrap()
+            crate::utils::transforms::get_safe_utf8_char_index(end + 1, &input)?
         };
 
         let mut result = String::with_capacity(input.len());
@@ -112,12 +113,11 @@ impl InstructionMethods for Ctc {
     }
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
         use crate::parse_args;
-        use crate::parser::params::TextForgeParamTypesJoin;
 
-        check_vec_len(params, 2, "ctc", params.join(""))?;
+        check_vec_len(params, 2, "ctc", "")?;
 
-        self.start_index = parse_args!(params, 0, Usize, "Index should be of usize type");
-        self.end_index = parse_args!(params, 1, Usize, "Index should be of usize type");
+        self.start_index = parse_args!(params, 0, Usize, "start");
+        self.end_index = parse_args!(params, 1, Usize, "end");
         self.params = vec![self.start_index.into(), self.end_index.into()];
 
         Ok(())

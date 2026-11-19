@@ -10,13 +10,13 @@ use crate::{
 };
 use std::borrow::Cow;
 
-/// DLNB — Delete lines before the given line, retaining that line.
+/// `dlnb {line};` — Delete the lines before `line`.
 ///
-/// Uses one-based indices and shared logical-line semantics. See `docs/lines.md`.
+/// Line indices start at 0 (Golden Rule 22); shared logical-line semantics. See `docs/lines.md`.
 ///
 /// ```
 /// use textforge::tokens::{InstructionMethods, transforms::dlnb::Dlnb};
-/// let token = Dlnb::new(2).unwrap();
+/// let token = Dlnb::new(1).unwrap();
 /// assert_eq!(token.transform("a\nb".into(), None).unwrap(), "b");
 /// ```
 #[derive(Clone)]
@@ -25,7 +25,7 @@ pub struct Dlnb {
     params: Vec<TextForgeParamTypes>,
 }
 impl Dlnb {
-    /// Construct `dlnb`. Line indices are one-based.
+    /// Construct `dlnb`. Line indices start at 0.
     pub fn new(line: usize) -> Result<Self, TextForgeError> {
         let mut token = Self::default();
         token.set_params(&[line.into()])?;
@@ -35,8 +35,8 @@ impl Dlnb {
 impl Default for Dlnb {
     fn default() -> Self {
         Self {
-            line: 1,
-            params: vec![1usize.into()],
+            line: 0,
+            params: vec![0usize.into()],
         }
     }
 }
@@ -54,7 +54,9 @@ impl InstructionMethods for Dlnb {
         let mut parts = vec![self.get_string_repr().to_owned()];
         for parameter in &self.params {
             parts.push(match parameter {
-                TextForgeParamTypes::String(value) => shell_words::quote(value).into_owned(),
+                TextForgeParamTypes::String(value) => {
+                    crate::text::line_parser::quote(value).into_owned()
+                }
                 TextForgeParamTypes::Usize(value) => value.to_string(),
                 _ => String::new(),
             });
@@ -62,15 +64,8 @@ impl InstructionMethods for Dlnb {
         format!("{};\n", parts.join(" ")).into()
     }
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 1, "dlnb", "Invalid line instruction arity")?;
-        let line = crate::parse_args!(params, 0, Usize, "Expected Usize");
-        if line == 0 {
-            return Err(crate::utils::lines::invalid(
-                "dlnb",
-                "Line numbers start at one",
-                "0",
-            ));
-        }
+        check_vec_len(params, 1, "dlnb", "")?;
+        let line = crate::parse_args!(params, 0, Usize, "line");
         self.line = line;
 
         self.params = params.to_vec();
@@ -83,7 +78,7 @@ impl InstructionMethods for Dlnb {
     ) -> Result<Cow<'a, str>, TextForgeError> {
         check_line(self.line, lines(&input).count(), "dlnb", &input)?;
         let offset: usize = lines(&input)
-            .take(self.line - 1)
+            .take(self.line)
             .map(|(t, e)| t.len() + e.len())
             .sum();
         let end = input.len();

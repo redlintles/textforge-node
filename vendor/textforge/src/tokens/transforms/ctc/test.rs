@@ -11,6 +11,13 @@ mod tests {
     use crate::utils::errors::{TextForgeError, TextForgeErrorCode};
 
     #[test]
+    fn end_past_empty_input_is_an_error_not_a_panic() {
+        // Clamping the end index used to compute `0 - 1` and overflow.
+        let t = crate::tokens::transforms::ctc::Ctc::new(0, 3).unwrap();
+        assert!(t.transform("".into(), None).is_err());
+    }
+
+    #[test]
     fn params_accepts_valid_range() {
         let t = Ctc::new(0, 1).unwrap();
         assert_eq!(t.start_index, 0);
@@ -31,7 +38,7 @@ mod tests {
 
     #[test]
     fn transform_capitalizes_chunk_simple_letters() {
-        // exemplo do doc: 1..5 em "bananabananosa" => "bAnanabananosa"
+        // docs example: 1..5 in "bananabananosa" => "bAnanabananosa"
         let mut ctx = GlobalExecutionContext::new();
 
         let t = Ctc::new(1, 5).unwrap();
@@ -45,13 +52,13 @@ mod tests {
 
     #[test]
     fn transform_capitalizes_words_inside_chunk_and_reinserts() {
-        // chunk pega "foo bar" e vira "Foo Bar"
+        // the chunk takes "foo bar" and becomes "Foo Bar"
         let input = "xx foo bar yy";
-        // índices por caractere:
+        // char indices:
         // "xx " = 3 chars => start 3
-        // "xx foo bar" (sem o espaço antes de yy) termina no índice 10? vamos computar:
+        // "xx foo bar" (without the space before yy) ends at index 10:
         // string: x(0) x(1) ' '(2) f(3) o(4) o(5) ' '(6) b(7) a(8) r(9) ' '(10) y(11) y(12)
-        // chunk [3..10) => chars 3..10 => "foo bar" (até antes do espaço)
+        // chunk [3..10) => chars 3..10 => "foo bar" (up to the space)
         let mut ctx = GlobalExecutionContext::new();
 
         let t = Ctc::new(3, 10).unwrap();
@@ -66,7 +73,7 @@ mod tests {
     #[test]
     fn transform_end_index_clamps_to_len() {
         let input = "hello";
-        let t = Ctc::new(0, 999).unwrap(); // end enorme, deve clamp
+        let t = Ctc::new(0, 999).unwrap(); // end far past the text is clamped
         let mut ctx = GlobalExecutionContext::new();
 
         assert_eq!(
@@ -79,10 +86,10 @@ mod tests {
 
     #[test]
     fn transform_on_unicode_char_indices() {
-        // garante que char_indices/byte slicing está correto
-        // "á" é 1 char (2 bytes), mas índice por char deve funcionar
+        // checks that char_indices/byte slicing is correct
+        // "á" is one char (2 bytes); indexing is by char
         let input = "ábc def";
-        // capitalizar chunk "ábc" => "Ábc"
+        // capitalize the chunk "ábc" => "Ábc"
         let t = Ctc::new(0, 3).unwrap();
         let mut ctx = GlobalExecutionContext::new();
 
@@ -97,7 +104,7 @@ mod tests {
     #[test]
     fn transform_errors_on_out_of_bounds_start() {
         let input = "abc";
-        let t = Ctc::new(5, 6).unwrap(); // params() só valida relação, não input
+        let t = Ctc::new(5, 6).unwrap(); // params() checks only the order of the bounds, not the input
         let mut ctx = GlobalExecutionContext::new();
 
         let got: Result<Cow<'_, str>, TextForgeError> = t.transform(input.into(), Some(&mut ctx));
@@ -138,7 +145,9 @@ mod tests {
         let got = t.set_params(&params);
 
         let expected = Err(crate::utils::errors::TextForgeError::new(
-            TextForgeErrorCode::InvalidParameters("Index should be of usize type".into()),
+            TextForgeErrorCode::InvalidParameters(
+                "parameter 1 (`start`) must be a non-negative integer, but it is text".into(),
+            ),
             "",
             "",
         ));
@@ -147,7 +156,7 @@ mod tests {
     }
 
     // ============================
-    // Bytecode-only tests (separados)
+    // Bytecode-only tests
     // ============================
     #[cfg(feature = "bytecode")]
     mod bytecode_tests {
@@ -165,7 +174,7 @@ mod tests {
             let t = Ctc::new(2, 7).unwrap();
             let bc = t.to_bytecode().unwrap();
 
-            // header mínimo: 8 + 4 + 1 = 13
+            // minimum header: 8 + 4 + 1 = 13
             assert!(bc.len() >= 13);
 
             let mut i = 0;
@@ -207,6 +216,16 @@ mod tests {
             match decoded2 {
                 TextForgeParamTypes::Usize(n) => assert_eq!(n, 7),
                 _ => panic!("Expected Usize param #2"),
+            }
+        }
+
+        #[test]
+        fn end_equal_to_the_length_is_clamped_like_larger_ends() {
+            // Previously `ctc 0 5` on "ab cd" was an error while `ctc 0 6` worked.
+            use crate::tokens::{InstructionMethods, transforms::ctc::Ctc};
+            for end in [5, 6, 100] {
+                let token = Ctc::new(0, end).unwrap();
+                assert_eq!(token.transform("ab cd".into(), None).unwrap(), "Ab Cd");
             }
         }
     }

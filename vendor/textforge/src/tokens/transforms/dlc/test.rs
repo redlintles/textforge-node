@@ -110,7 +110,9 @@ mod tests {
         let got = t.set_params(&params);
 
         let expected = Err(crate::utils::errors::TextForgeError::new(
-            TextForgeErrorCode::InvalidParameters("Index should be of usize type".into()),
+            TextForgeErrorCode::InvalidParameters(
+                "parameter 1 (`start`) must be a non-negative integer, but it is text".into(),
+            ),
             "",
             "",
         ));
@@ -137,7 +139,7 @@ mod tests {
             let t = Dlc::new(2, 7).unwrap();
             let bc = t.to_bytecode().unwrap();
 
-            // header mínimo: 8 + 4 + 1 = 13
+            // minimum header: 8 + 4 + 1 = 13
             assert!(bc.len() >= 13);
 
             let mut i = 0;

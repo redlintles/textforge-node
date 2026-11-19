@@ -6,9 +6,9 @@ use crate::{
 };
 use std::borrow::Cow;
 
-/// DLM — Delete lines whose content matches a regular expression.
+/// `dlm {pattern};` — Delete the lines that match `pattern`.
 ///
-/// Uses one-based indices and shared logical-line semantics. See `docs/lines.md`.
+/// Uses the shared logical-line semantics. See `docs/lines.md`.
 ///
 /// ```
 /// use textforge::tokens::{InstructionMethods, transforms::dlm::Dlm};
@@ -22,7 +22,7 @@ pub struct Dlm {
     params: Vec<TextForgeParamTypes>,
 }
 impl Dlm {
-    /// Construct `dlm`. Line indices are one-based.
+    /// Construct `dlm`.
     pub fn new(pattern: &str) -> Result<Self, TextForgeError> {
         let mut token = Self::default();
         token.set_params(&[pattern.to_owned().into()])?;
@@ -52,7 +52,9 @@ impl InstructionMethods for Dlm {
         let mut parts = vec![self.get_string_repr().to_owned()];
         for parameter in &self.params {
             parts.push(match parameter {
-                TextForgeParamTypes::String(value) => shell_words::quote(value).into_owned(),
+                TextForgeParamTypes::String(value) => {
+                    crate::text::line_parser::quote(value).into_owned()
+                }
                 TextForgeParamTypes::Usize(value) => value.to_string(),
                 _ => String::new(),
             });
@@ -60,8 +62,8 @@ impl InstructionMethods for Dlm {
         format!("{};\n", parts.join(" ")).into()
     }
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 1, "dlm", "Invalid line instruction arity")?;
-        let pattern = crate::parse_args!(params, 0, String, "Expected String");
+        check_vec_len(params, 1, "dlm", "")?;
+        let pattern = crate::parse_args!(params, 0, String, "pattern");
         // A valid regex may contain interpolation-like text, such as POSIX
         // character classes. Compile it before treating failed patterns as
         // unresolved pipeline parameters.
@@ -69,13 +71,7 @@ impl InstructionMethods for Dlm {
             Ok(regex) => Some(regex),
             Err(_) if pattern.contains("{{") || pattern.contains("[[") => None,
             Err(error) => {
-                return Err(TextForgeError::new(
-                    crate::utils::errors::TextForgeErrorCode::TextParsingError(
-                        error.to_string().into(),
-                    ),
-                    "dlm",
-                    pattern.clone(),
-                ));
+                return Err(crate::utils::errors::regex_error("dlm", &pattern, error));
             }
         };
         self.pattern = pattern;
@@ -89,10 +85,13 @@ impl InstructionMethods for Dlm {
         input: Cow<'a, str>,
         _: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
-        let pattern = self
-            .regex
-            .as_ref()
-            .ok_or_else(|| invalid("dlm", "Unresolved regex", &self.pattern))?;
+        let pattern = self.regex.as_ref().ok_or_else(|| {
+            invalid(
+                "dlm",
+                "the regular expression was never compiled: the parameters were not set",
+                &self.pattern,
+            )
+        })?;
         Ok(crate::utils::allocation::filter_lines(input, |text| {
             !pattern.is_match(text)
         }))

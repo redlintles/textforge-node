@@ -13,7 +13,7 @@ use crate::{
 };
 
 use crate::parser::params::TextForgeParamTypes;
-/// URLD - URL Decode
+/// `urld;` — URL-decode.
 ///
 /// Decodes `input` from the URL Encoding Format
 ///
@@ -24,7 +24,7 @@ use crate::parser::params::TextForgeParamTypes;
 ///
 /// let token = Urld::default();
 ///
-/// assert_eq!(token.transform("banana%20laranja".into(),None).unwrap().to_string(), "banana laranja");
+/// assert_eq!(token.transform("banana%20orange".into(),None).unwrap().to_string(), "banana orange");
 /// ```
 ///
 
@@ -53,7 +53,7 @@ impl InstructionMethods for Urld {
         input: Cow<'a, str>,
         _: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
-        // Validação de percent encoding
+        // Validate the percent encoding
         let bytes = input.as_bytes();
         let len = bytes.len();
 
@@ -65,9 +65,11 @@ impl InstructionMethods for Urld {
                     || !bytes[i + 2].is_ascii_hexdigit()
                 {
                     return Err(TextForgeError::new(
-                        TextForgeErrorCode::TextParsingError("Failed parsing URL string".into()),
+                        TextForgeErrorCode::TextParsingError(
+                    "the text is not valid URL encoding: a `%` must be followed by two hexadecimal digits, and the decoded bytes must be UTF-8".into(),
+                ),
                         "urld",
-                        input.to_string(),
+                        crate::utils::errors::input_excerpt(&input),
                     ));
                 }
                 i += 3;
@@ -78,9 +80,11 @@ impl InstructionMethods for Urld {
 
         let result = urlencoding::decode(input.as_ref()).map_err(|_| {
             TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Failed parsing URL string".into()),
+                TextForgeErrorCode::TextParsingError(
+                    "the text is not valid URL encoding: a `%` must be followed by two hexadecimal digits, and the decoded bytes must be UTF-8".into(),
+                ),
                 "urld",
-                input.to_string(),
+                crate::utils::errors::input_excerpt(&input),
             )
         })?;
 

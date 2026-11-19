@@ -1,13 +1,13 @@
 // params.rs
-// Reescrito para suportar:
-// - Texto: retorna Vec<ValType> (Literal / VarRef) via sintaxe {{nome}}
+// Supports:
+// - Text: returns Vec<ValType> (Literal / VarRef) through the {{name}} syntax
 // - Bytecode: 0x01 String, 0x02 Usize, 0x03 Token, 0x04 VarRef
-// - PARAM_TOKEN: constrói TokenWrapper(params: Vec<ValType>, token: Box<dyn InstructionMethods>)
-//   (não chama set_params aqui; isso fica pro runtime no TokenWrapper)
+// - PARAM_TOKEN: builds TokenWrapper(params: Vec<ValType>, token: Box<dyn InstructionMethods>)
+//   (does not call set_params here; TokenWrapper does that at run time)
 
 #[cfg(feature = "bytecode")]
 use crate::context::execution_context::GlobalExecutionContext;
-use crate::utils::regexes::VAR_REF_RE;
+use crate::utils::{expr::is_numeric_template, regexes::VAR_REF_RE};
 use core::str;
 use std::{
     array::TryFromSliceError,
@@ -27,13 +27,18 @@ use crate::{
     },
 };
 
-/// Tipos resolvidos (sem variáveis pendentes)
+/// A resolved parameter value: text, a number, a nested instruction, a variable
+/// reference, or the pipeline joined by `ppjn`.
 #[derive(Clone)]
+#[non_exhaustive]
 pub enum TextForgeParamTypes {
     String(String),
     Usize(usize),
     Token(TokenWrapper),
     VarRef(String),
+    /// The pipeline joined by `ppjn`. It has no text form: parsers add it
+    /// after the path, and bytecode embeds the loaded pipeline (type 0x05).
+    Pipeline(crate::parser::joins::JoinState),
 }
 
 // --------------------------
@@ -71,6 +76,9 @@ impl TryFrom<TextForgeParamTypes> for String {
             TextForgeParamTypes::Usize(v) => v.to_string(),
             TextForgeParamTypes::Token(v) => v.to_text_line_unresolved()?,
             TextForgeParamTypes::VarRef(v) => v,
+            TextForgeParamTypes::Pipeline(_) => {
+                return Err(not_a_value("String"));
+            }
         })
     }
 }
@@ -92,13 +100,14 @@ impl TryFrom<TextForgeParamTypes> for VarValues {
             TextForgeParamTypes::String(s) => VarValues::String(s),
             TextForgeParamTypes::Usize(n) => VarValues::Usize(n),
             TextForgeParamTypes::Token(t) => VarValues::Token(t),
+            TextForgeParamTypes::Pipeline(_) => return Err(not_a_value("VarValues")),
             TextForgeParamTypes::VarRef(_) => {
                 return Err(TextForgeError::new(
                     TextForgeErrorCode::TryIntoFailError(
-                        "VarRef must be resolved through context before becoming a VarValues"
+                        "internal error: a variable reference was used as a value before it was resolved"
                             .into(),
                     ),
-                    "TryFrom<TextForgeParamTypes> for VarValues",
+                    "",
                     "",
                 ));
             }
@@ -111,11 +120,11 @@ impl TryFrom<TextForgeParamTypes> for usize {
     fn try_from(value: TextForgeParamTypes) -> Result<Self, TextForgeError> {
         match value {
             TextForgeParamTypes::Usize(v) => Ok(v),
-            _ => Err(TextForgeError::new(
+            other => Err(TextForgeError::new(
                 TextForgeErrorCode::TryIntoFailError(
-                    "Failed conversion from TextForgeParamTypes to usize".into(),
+                    format!("expected a number, but the value is {}", other.kind_name()).into(),
                 ),
-                "TryFrom<TextForgeParamTypes> for usize",
+                "",
                 "",
             )),
         }
@@ -127,18 +136,22 @@ impl TryFrom<TextForgeParamTypes> for TokenWrapper {
     fn try_from(value: TextForgeParamTypes) -> Result<Self, TextForgeError> {
         match value {
             TextForgeParamTypes::Token(v) => Ok(v),
-            _ => Err(TextForgeError::new(
+            other => Err(TextForgeError::new(
                 TextForgeErrorCode::TryIntoFailError(
-                    "Failed conversion from TextForgeParamTypes to TokenWrapper".into(),
+                    format!(
+                        "expected an instruction, but the value is {}",
+                        other.kind_name()
+                    )
+                    .into(),
                 ),
-                "TryFrom<TextForgeParamTypes> for TokenWrapper",
+                "",
                 "",
             )),
         }
     }
 }
 
-/// Debug customizado para evitar exigir Debug em dyn InstructionMethods
+/// Written by hand so that instructions need not implement `Debug`.
 impl std::fmt::Debug for TextForgeParamTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -148,35 +161,24 @@ impl std::fmt::Debug for TextForgeParamTypes {
                 f.debug_tuple("Token").field(&t.get_string_repr()).finish()
             }
             TextForgeParamTypes::VarRef(s) => f.debug_tuple("VarRef").field(s).finish(),
+            TextForgeParamTypes::Pipeline(state) => f.debug_tuple("Pipeline").field(state).finish(),
         }
     }
 }
 
-pub trait TextForgeParamTypesJoin {
-    fn join(&self, sep: &str) -> String;
-}
-
-impl TextForgeParamTypesJoin for Vec<TextForgeParamTypes> {
-    fn join(&self, sep: &str) -> String {
-        self.as_slice().join(sep)
-    }
-}
-
-impl TextForgeParamTypesJoin for [TextForgeParamTypes] {
-    fn join(&self, sep: &str) -> String {
-        let mut out = String::new();
-        for (idx, item) in self.iter().enumerate() {
-            if idx > 0 {
-                out.push_str(sep);
-            }
-            out.push_str(&item.to_string());
-        }
-        out
-    }
+/// A joined pipeline (`ppjn`) is not a value a variable or text can hold.
+fn not_a_value(target: &'static str) -> TextForgeError {
+    TextForgeError::new(
+        TextForgeErrorCode::TryIntoFailError(
+            format!("a joined pipeline (ppjn) cannot be used as {target}").into(),
+        ),
+        "",
+        "",
+    )
 }
 
 // --------------------------
-// Política de aninhamento
+// Nesting policy
 // --------------------------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -193,6 +195,7 @@ const PARAM_STRING: u32 = 0x01;
 const PARAM_USIZE: u32 = 0x02;
 const PARAM_TOKEN: u32 = 0x03;
 const PARAM_VARREF: u32 = 0x04;
+pub(crate) const PARAM_PIPELINE: u32 = 0x05;
 
 impl std::fmt::Display for TextForgeParamTypes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -200,13 +203,26 @@ impl std::fmt::Display for TextForgeParamTypes {
             Self::String(value) | Self::VarRef(value) => f.write_str(value),
             Self::Usize(value) => write!(f, "{value}"),
             Self::Token(value) => f.write_str(&value.to_textforge_line()),
+            Self::Pipeline(_) => Ok(()),
         }
     }
 }
 
 impl TextForgeParamTypes {
+    /// What kind of value this is, for error messages: `text`, `a number`, …
+    #[doc(hidden)]
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            TextForgeParamTypes::String(_) => "text",
+            TextForgeParamTypes::Usize(_) => "a number",
+            TextForgeParamTypes::Token(_) => "an instruction",
+            TextForgeParamTypes::VarRef(_) => "a variable reference",
+            TextForgeParamTypes::Pipeline(_) => "a joined pipeline",
+        }
+    }
+
     // --------------------------
-    // Parsing de texto -> Vec<ValType>
+    // Text parsing -> Vec<ValType>
     // --------------------------
 
     pub fn from_expected(
@@ -217,9 +233,20 @@ impl TextForgeParamTypes {
             Self::parse_with_cursor(expected, chunks, 0, 0, AssocMode::Normal)?;
         if consumed != chunks.len() {
             return Err(TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Extra parameters after parsing".into()),
-                "TextForgeParamTypes::from_expected",
-                format!("consumed={}, total={}", consumed, chunks.len()),
+                TextForgeErrorCode::TextParsingError(
+                    format!(
+                        "unexpected extra {}: `{}`",
+                        if chunks.len() - consumed == 1 {
+                            "parameter"
+                        } else {
+                            "parameters"
+                        },
+                        chunks[consumed..].join(" ")
+                    )
+                    .into(),
+                ),
+                "",
+                "",
             ));
         }
         Ok(parsed)
@@ -236,6 +263,13 @@ impl TextForgeParamTypes {
         let this_is_block_like = Self::is_block_like_signature(&expected);
 
         for p in expected.iter() {
+            // A joined pipeline has no text: it is loaded later (`ppjn`).
+            if matches!(p.token, SyntaxToken::Pipeline) {
+                out.push(ValType::Literal(TextForgeParamTypes::Pipeline(
+                    crate::parser::joins::JoinState::Unloaded,
+                )));
+                continue;
+            }
             // Context references occupy every parameter kind in the portable
             // API. Recognize them before parsing numeric or nested token data,
             // just as the existing String branch does.
@@ -245,8 +279,10 @@ impl TextForgeParamTypes {
             {
                 let name = captures.get(1).ok_or_else(|| {
                     TextForgeError::new(
-                        TextForgeErrorCode::TextParsingError("Missing variable name".into()),
-                        "TextForgeParamTypes::parse_with_cursor",
+                        TextForgeErrorCode::TextParsingError(
+                            "internal error: a variable reference has no name".into(),
+                        ),
+                        "",
                         value.clone(),
                     )
                 })?;
@@ -255,22 +291,24 @@ impl TextForgeParamTypes {
                 continue;
             }
             match p.token {
+                SyntaxToken::Pipeline => {}
                 SyntaxToken::Literal(expected_literal) => {
                     let literal = chunks.get(i).ok_or_else(|| {
                         TextForgeError::new(
-                            TextForgeErrorCode::TextParsingError("Missing literal".into()),
-                            "TextForgeParamTypes::parse_with_cursor",
-                            format!("index={}", i),
+                            TextForgeErrorCode::TextParsingError(
+                                format!("missing the keyword `{expected_literal}`").into(),
+                            ),
+                            "",
+                            "",
                         )
                     })?;
                     if expected_literal != literal {
                         return Err(TextForgeError::new(
-                            TextForgeErrorCode::InvalidParameters("Invalid literal".into()),
-                            "TextForgeParamTypes::parse_with_cursor",
-                            format!(
-                                "expected={}, got={}, index={}",
-                                expected_literal, literal, i
+                            TextForgeErrorCode::InvalidParameters(
+                                format!("expected the keyword `{expected_literal}`, but found `{literal}`").into(),
                             ),
+                            "",
+                            "",
                         ));
                     }
                     i += 1;
@@ -279,9 +317,11 @@ impl TextForgeParamTypes {
                 SyntaxToken::String => {
                     let s = chunks.get(i).ok_or_else(|| {
                         TextForgeError::new(
-                            TextForgeErrorCode::TextParsingError("Missing String parameter".into()),
-                            "TextForgeParamTypes::parse_with_cursor",
-                            format!("index={}", i),
+                            TextForgeErrorCode::TextParsingError(
+                                "a text parameter is missing".into(),
+                            ),
+                            "",
+                            "",
                         )
                     })?;
 
@@ -293,14 +333,21 @@ impl TextForgeParamTypes {
                 SyntaxToken::Usize => {
                     let s = chunks.get(i).ok_or_else(|| {
                         TextForgeError::new(
-                            TextForgeErrorCode::TextParsingError("Missing Usize parameter".into()),
-                            "TextForgeParamTypes::parse_with_cursor",
-                            format!("index={}", i),
+                            TextForgeErrorCode::TextParsingError(
+                                "a number parameter is missing".into(),
+                            ),
+                            "",
+                            "",
                         )
                     })?;
-                    out.push(ValType::Literal(TextForgeParamTypes::Usize(
-                        string_to_usize(s)?,
-                    )));
+                    if is_numeric_template(s) {
+                        // Resolved to a number at execution time.
+                        out.push(ValType::Literal(TextForgeParamTypes::String(s.clone())));
+                    } else {
+                        out.push(ValType::Literal(TextForgeParamTypes::Usize(
+                            string_to_usize(s)?,
+                        )));
+                    }
                     i += 1;
                 }
 
@@ -321,13 +368,20 @@ impl TextForgeParamTypes {
                     if next_depth > max_depth {
                         return Err(TextForgeError::new(
                             TextForgeErrorCode::TextParsingError(
-                                "Nested token depth exceeded".into(),
+                                format!(
+                                    "instructions are nested too deeply: at most {} {} allowed here ({})",
+                                    max_depth,
+                                    if max_depth == 1 { "level is" } else { "levels are" },
+                                    if child_assoc_mode == AssocMode::AssocPayload {
+                                        "inside a block"
+                                    } else {
+                                        "at the top level; a block allows deeper nesting: `blk name assoc <instruction>;` then `cblk name;`"
+                                    }
+                                )
+                                .into(),
                             ),
-                            "TextForgeParamTypes::parse_with_cursor",
-                            format!(
-                                "depth={}, max={}, index={}, assoc={:?}",
-                                next_depth, max_depth, i, child_assoc_mode
-                            ),
+                            "",
+                            "",
                         ));
                     }
 
@@ -337,10 +391,10 @@ impl TextForgeParamTypes {
                         .ok_or_else(|| {
                             TextForgeError::new(
                                 TextForgeErrorCode::TextParsingError(
-                                    "Missing nested token identifier".into(),
+                                    "the nested instruction is missing".into(),
                                 ),
-                                "TextForgeParamTypes::parse_with_cursor",
-                                format!("index={}", i),
+                                "",
+                                "",
                             )
                         })?
                         .clone();
@@ -356,16 +410,17 @@ impl TextForgeParamTypes {
                         _ => unreachable!("Invalid Query result (Syntax)"),
                     };
 
-                    // Dentro de AssocPayload não pode existir outro token block-like
+                    // No other block-like instruction may appear inside an AssocPayload
                     if child_assoc_mode == AssocMode::AssocPayload
                         && Self::is_block_like_signature(&nested_expected)
                     {
                         return Err(TextForgeError::new(
                             TextForgeErrorCode::TextParsingError(
-                                "A block cannot contain another block".into(),
+                                format!("a block cannot contain another block (`{nested_id}`)")
+                                    .into(),
                             ),
-                            "TextForgeParamTypes::parse_with_cursor",
-                            format!("nested_id={}, index={}", nested_id, i - 1),
+                            "",
+                            "",
                         ));
                     }
 
@@ -415,11 +470,53 @@ impl TextForgeParamTypes {
     }
 
     // --------------------------
-    // Parsing de Bytecode -> TextForgeParamTypes (raiz) / ValType (params internos)
+    // Bytecode parsing -> TextForgeParamTypes (root) / ValType (inner params)
     // --------------------------
 
     pub fn from_bytecode(bytecode: Vec<u8>) -> Result<TextForgeParamTypes, TextForgeError> {
         Self::from_bytecode_with_policy(&bytecode, 0, AssocMode::Normal)
+    }
+
+    /// Decode the instruction parameter of a top-level instruction with the
+    /// text parser's rules: the child sits at depth 1, and the payload of a
+    /// block-like instruction (`blk`) uses the block depth limit and may not be
+    /// another block.
+    #[cfg(feature = "bytecode")]
+    pub(crate) fn from_bytecode_as_root_child(
+        bytecode: &[u8],
+        parent_opcode: u32,
+    ) -> Result<TextForgeParamTypes, TextForgeError> {
+        let parent =
+            match TOKEN_TABLE.find((QuerySource::Bytecode(parent_opcode), QueryTarget::Syntax))? {
+                TargetValue::Syntax(syntax) => syntax,
+                _ => unreachable!("Invalid query result (Syntax)"),
+            };
+        let block_payload = Self::is_block_like_signature(&parent);
+        let mode = if block_payload {
+            AssocMode::AssocPayload
+        } else {
+            AssocMode::Normal
+        };
+        let parsed = Self::from_bytecode_with_policy(bytecode, 1, mode)?;
+        if block_payload && let TextForgeParamTypes::Token(child) = &parsed {
+            let child_syntax = match TOKEN_TABLE.find((
+                QuerySource::Identifier(Cow::Owned(child.get_string_repr().to_string())),
+                QueryTarget::Syntax,
+            ))? {
+                TargetValue::Syntax(syntax) => syntax,
+                _ => unreachable!("Invalid query result (Syntax)"),
+            };
+            if Self::is_block_like_signature(&child_syntax) {
+                return Err(TextForgeError::new(
+                    TextForgeErrorCode::BytecodeParsingError(
+                        "a block cannot contain another block".into(),
+                    ),
+                    "bytecode parameter",
+                    format!("nested_id={}", child.get_string_repr()),
+                ));
+            }
+        }
+        Ok(parsed)
     }
 
     fn from_bytecode_with_policy(
@@ -427,14 +524,14 @@ impl TextForgeParamTypes {
         token_depth: u8,
         assoc_mode: AssocMode,
     ) -> Result<TextForgeParamTypes, TextForgeError> {
-        // Layout novo: [u64 total][u32 type][u32 payload_size][payload]
+        // Current layout: [u64 total][u32 type][u32 payload_size][payload]
         if bytes.len() >= 16
             && let Ok(total) = Self::peek_u64_be(&bytes[0..8])
             && (total as usize) == bytes.len()
         {
             return Self::parse_param_new_layout(bytes, token_depth, assoc_mode);
         }
-        // Layout antigo: [u32 type][u32 payload_size][payload]
+        // Legacy layout: [u32 type][u32 payload_size][payload]
         Self::parse_param_old_layout(bytes, token_depth, assoc_mode)
     }
 
@@ -445,37 +542,28 @@ impl TextForgeParamTypes {
     ) -> Result<TextForgeParamTypes, TextForgeError> {
         let mut reader = Cursor::new(bytes);
 
-        let total_size =
-            Self::read_u64_be(&mut reader, "TextForgeParamTypes::from_bytecode(total)")? as usize;
+        let total_size = Self::read_u64_be(&mut reader, "bytecode parameter")? as usize;
         if total_size != bytes.len() {
             return Err(TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Param total size mismatch".into()),
-                "TextForgeParamTypes::from_bytecode(new_layout)",
+                TextForgeErrorCode::BytecodeParsingError("a parameter record does not match its declared size; the file is corrupt or was not written by TextForge".into()),
+                "bytecode parameter",
                 format!("declared={}, actual={}", total_size, bytes.len()),
             ));
         }
 
-        let param_type =
-            Self::read_u32_be(&mut reader, "TextForgeParamTypes::from_bytecode(type)")?;
-        let payload_size = Self::read_u32_be(
-            &mut reader,
-            "TextForgeParamTypes::from_bytecode(payload_size)",
-        )? as usize;
+        let param_type = Self::read_u32_be(&mut reader, "bytecode parameter")?;
+        let payload_size = Self::read_u32_be(&mut reader, "bytecode parameter")? as usize;
 
         let remaining = bytes.len().saturating_sub(reader.position() as usize);
         if payload_size > remaining {
             return Err(TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Payload exceeds remaining".into()),
-                "TextForgeParamTypes::from_bytecode(new_layout)",
+                TextForgeErrorCode::BytecodeParsingError("a parameter declares more bytes than its record holds; the file is corrupt or was not written by TextForge".into()),
+                "bytecode parameter",
                 format!("payload_size={}, remaining={}", payload_size, remaining),
             ));
         }
 
-        let payload = Self::read_exact_vec(
-            &mut reader,
-            payload_size,
-            "TextForgeParamTypes::from_bytecode(payload)",
-        )?;
+        let payload = Self::read_exact_vec(&mut reader, payload_size, "bytecode parameter")?;
         Self::decode_param_payload(param_type, payload, token_depth, assoc_mode)
     }
 
@@ -486,38 +574,30 @@ impl TextForgeParamTypes {
     ) -> Result<TextForgeParamTypes, TextForgeError> {
         if bytes.len() < 8 {
             return Err(TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Param too small".into()),
-                "TextForgeParamTypes::from_bytecode(old_layout)",
+                TextForgeErrorCode::BytecodeParsingError("a parameter record is shorter than its header; the file is corrupt or was not written by TextForge".into()),
+                "bytecode parameter",
                 format!("len={}", bytes.len()),
             ));
         }
 
         let mut reader = Cursor::new(bytes);
-        let param_type =
-            Self::read_u32_be(&mut reader, "TextForgeParamTypes::from_bytecode(type)")?;
-        let payload_size = Self::read_u32_be(
-            &mut reader,
-            "TextForgeParamTypes::from_bytecode(payload_size)",
-        )? as usize;
+        let param_type = Self::read_u32_be(&mut reader, "bytecode parameter")?;
+        let payload_size = Self::read_u32_be(&mut reader, "bytecode parameter")? as usize;
 
         let remaining = bytes.len().saturating_sub(reader.position() as usize);
         if payload_size > remaining {
             return Err(TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Payload exceeds remaining".into()),
-                "TextForgeParamTypes::from_bytecode(old_layout)",
+                TextForgeErrorCode::BytecodeParsingError("a parameter declares more bytes than its record holds; the file is corrupt or was not written by TextForge".into()),
+                "bytecode parameter",
                 format!("payload_size={}, remaining={}", payload_size, remaining),
             ));
         }
 
-        let payload = Self::read_exact_vec(
-            &mut reader,
-            payload_size,
-            "TextForgeParamTypes::from_bytecode(payload)",
-        )?;
+        let payload = Self::read_exact_vec(&mut reader, payload_size, "bytecode parameter")?;
         Self::decode_param_payload(param_type, payload, token_depth, assoc_mode)
     }
 
-    /// Decode para tipos resolvidos (não aceita VarRef aqui como raiz)
+    /// Decodes a resolved parameter (a variable reference is not accepted here).
     fn decode_param_payload(
         param_type: u32,
         payload: Vec<u8>,
@@ -525,13 +605,17 @@ impl TextForgeParamTypes {
         assoc_mode: AssocMode,
     ) -> Result<TextForgeParamTypes, TextForgeError> {
         match param_type {
+            #[cfg(feature = "bytecode")]
+            PARAM_PIPELINE => Ok(TextForgeParamTypes::Pipeline(
+                crate::bytecode::reader::decode_pipeline_payload(&payload)?,
+            )),
             PARAM_STRING => {
                 let text = str::from_utf8(&payload).map_err(|e| {
                     TextForgeError::new(
                         TextForgeErrorCode::BytecodeParamParsingError(
-                            "Failed parsing bytes to UTF8 string".into(),
+                            "a text parameter in the bytecode is not valid UTF-8".into(),
                         ),
-                        "TextForgeParamTypes::from_bytecode(String)",
+                        "bytecode parameter",
                         e.to_string(),
                     )
                 })?;
@@ -546,9 +630,9 @@ impl TextForgeParamTypes {
                         .map_err(|e: TryFromSliceError| {
                             TextForgeError::new(
                                 TextForgeErrorCode::BytecodeParamParsingError(
-                                    "Failed parsing bytes to usize".into(),
+                                    "a number parameter must be 8 bytes long; the file is corrupt or was not written by TextForge".into(),
                                 ),
-                                "TextForgeParamTypes::from_bytecode(Usize)",
+                                "bytecode parameter",
                                 e.to_string(),
                             )
                         })?;
@@ -556,14 +640,14 @@ impl TextForgeParamTypes {
             }
 
             PARAM_VARREF => {
-                // VarRef só deveria existir dentro de Token params (ValType),
-                // mas se aparecer aqui como raiz, retorna erro claro.
+                // A VarRef should exist only inside Token params (ValType);
+                // if one appears here as a root, return a clear error.
                 Err(TextForgeError::new(
                     TextForgeErrorCode::BytecodeParamParsingError(
-                        "VarRef cannot be a root TextForgeParamTypes".into(),
-                    ),
-                    "TextForgeParamTypes::from_bytecode(VarRef)",
-                    "Use decode_val_payload inside PARAM_TOKEN",
+                    "internal error: a variable reference cannot be decoded at this position".into(),
+                ),
+                "bytecode parameter",
+                "",
                 ))
             }
 
@@ -582,14 +666,14 @@ impl TextForgeParamTypes {
 
                 let opcode = Self::read_u32_be(
                     &mut reader,
-                    "TextForgeParamTypes::from_bytecode(Token.opcode)",
+                    "bytecode parameter",
                 )?;
                 let param_count = Self::read_u8(
                     &mut reader,
-                    "TextForgeParamTypes::from_bytecode(Token.param_count)",
+                    "bytecode parameter",
                 )? as usize;
 
-                // Sintaxe esperada (com literais)
+                // Expected syntax (with literals)
                 let expected =
                     match TOKEN_TABLE.find((QuerySource::Bytecode(opcode), QueryTarget::Syntax))? {
                         TargetValue::Syntax(p) => p,
@@ -599,8 +683,8 @@ impl TextForgeParamTypes {
                 let expected_effective = Self::effective_syntax_tokens(&expected);
                 if param_count != expected_effective.len() {
                     return Err(TextForgeError::new(
-                        TextForgeErrorCode::BytecodeParsingError("Param count mismatch".into()),
-                        "TextForgeParamTypes::from_bytecode(Token.param_count)",
+                        TextForgeErrorCode::BytecodeParsingError("a nested instruction has the wrong number of parameters for its opcode".into()),
+                        "bytecode parameter",
                         format!(
                             "opcode=0x{:X}, expected_effective={}, got={}",
                             opcode,
@@ -614,27 +698,27 @@ impl TextForgeParamTypes {
                 let mut params: Vec<ValType> = Vec::with_capacity(param_count);
 
                 for expected_type in &expected_effective {
-                    // Cada parâmetro do token está no layout novo (começa com u64 total)
+                    // Each parameter of the instruction uses the current layout (starts with a u64 total)
                     let size_u64 = Self::read_u64_be(
                         &mut reader,
-                        "TextForgeParamTypes::from_bytecode(Token.param_total_size)",
+                        "bytecode parameter",
                     )?;
 
                     let size_usize = usize::try_from(size_u64).map_err(|_| {
                         TextForgeError::new(
-                            TextForgeErrorCode::BytecodeParsingError("Param size overflow".into()),
-                            "TextForgeParamTypes::from_bytecode(Token.param_total_size)",
+                            TextForgeErrorCode::BytecodeParsingError("a parameter is too large to read on this machine".into()),
+                            "bytecode parameter",
                             format!("size_u64={}", size_u64),
                         )
                     })?;
 
                     if size_usize < 16 {
-                        // no layout novo, mínimo: 8+4+4
+                        // in the current layout, at least 8+4+4
                         return Err(TextForgeError::new(
                             TextForgeErrorCode::BytecodeParsingError(
-                                "Invalid param total size".into(),
+                                "a parameter record declares an impossible size; the file is corrupt or was not written by TextForge".into(),
                             ),
-                            "TextForgeParamTypes::from_bytecode(Token.param_total_size)",
+                            "bytecode parameter",
                             format!("size={}", size_usize),
                         ));
                     }
@@ -643,7 +727,7 @@ impl TextForgeParamTypes {
                     let rest = Self::read_exact_vec(
                         &mut reader,
                         rest_len,
-                        "TextForgeParamTypes::from_bytecode(Token.param_bytes)",
+                        "bytecode parameter",
                     )?;
 
                     let mut full_param: Vec<u8> = Vec::with_capacity(size_usize);
@@ -659,7 +743,7 @@ impl TextForgeParamTypes {
                         AssocMode::Normal
                     };
 
-                    // Peek do tipo do filho para checar depth
+                    // Peek at the child's type to check the depth
                     #[allow(unused_parens)]
                     if let Ok(next_param_type) = {
                         let mut cursor = Cursor::new(full_param.as_slice());
@@ -675,9 +759,9 @@ impl TextForgeParamTypes {
                         if next_depth > max_depth {
                             return Err(TextForgeError::new(
                                 TextForgeErrorCode::BytecodeParsingError(
-                                    "Nested token depth exceeded".into(),
+                                    "instructions are nested too deeply: the bytecode nests deeper than the text format allows".into(),
                                 ),
-                                "TextForgeParamTypes::from_bytecode(Token)",
+                                "bytecode parameter",
                                 format!(
                                     "depth={}, max_assoc_mode={:?}",
                                     next_depth, child_assoc_mode
@@ -686,14 +770,14 @@ impl TextForgeParamTypes {
                         }
                     }
 
-                    // Agora decodifica o child param como ValType (pode ser VarRef)
+                    // Decode the child param as a ValType (it may be a VarRef)
                     let parsed_val = Self::decode_full_param_as_valtype(
                         &full_param,
                         token_depth + 1,
                         child_assoc_mode,
                     )?;
 
-                    // Regra: em AssocPayload não pode existir block-like (só se child for Token literal)
+                    // Rule: no block-like instruction inside an AssocPayload (only when the child is a Token literal)
                     if child_assoc_mode == AssocMode::AssocPayload
                         && let ValType::Literal(TextForgeParamTypes::Token(ref tok)) = parsed_val
                     {
@@ -708,9 +792,9 @@ impl TextForgeParamTypes {
                         if Self::is_block_like_signature(&nested_expected) {
                             return Err(TextForgeError::new(
                                 TextForgeErrorCode::BytecodeParsingError(
-                                    "A block cannot contain another block".into(),
+                                    "a block cannot contain another block".into(),
                                 ),
-                                "TextForgeParamTypes::from_bytecode(Token)",
+                                "bytecode parameter",
                                 format!("nested_id={}", tok.get_string_repr()),
                             ));
                         }
@@ -719,7 +803,7 @@ impl TextForgeParamTypes {
                     params.push(parsed_val);
                 }
 
-                // Token base (default), embrulhado com params não resolvidos
+                // Default instruction, wrapped with unresolved params
                 let query_result =
                     TOKEN_TABLE.find((QuerySource::Bytecode(opcode), QueryTarget::Token))?;
                 match query_result {
@@ -736,17 +820,16 @@ impl TextForgeParamTypes {
 
             _ => Err(TextForgeError::new(
                 TextForgeErrorCode::BytecodeParamNotRecognized(
-                    format!("Param Bytecode Not Recognized 0x{:X}", param_type).into(),
+                    format!("unknown parameter type 0x{param_type:02X} (known types: 0x01 text, 0x02 number, 0x03 instruction, 0x04 variable, 0x05 joined pipeline)").into(),
                 ),
-                "TextForgeParamTypes::from_bytecode",
+                "bytecode parameter",
                 "",
             )),
         }
     }
 
-    /// Decodifica um full_param (layout novo) para ValType:
-    /// - 0x04 => VarRef(String)
-    /// - outros => Literal(TextForgeParamTypes)
+    /// Decodes a full parameter record: type 0x04 becomes a variable reference,
+    /// every other type a literal.
     fn decode_full_param_as_valtype(
         full_param: &[u8],
         token_depth: u8,
@@ -754,8 +837,8 @@ impl TextForgeParamTypes {
     ) -> Result<ValType, TextForgeError> {
         if full_param.len() < 16 {
             return Err(TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Param too small".into()),
-                "TextForgeParamTypes::decode_full_param_as_valtype",
+                TextForgeErrorCode::BytecodeParsingError("a parameter record is shorter than its header; the file is corrupt or was not written by TextForge".into()),
+                "bytecode parameter",
                 format!("len={}", full_param.len()),
             ));
         }
@@ -764,8 +847,8 @@ impl TextForgeParamTypes {
         let total = Self::read_u64_be(&mut cursor, "ValType.param.total")? as usize;
         if total != full_param.len() {
             return Err(TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Param total size mismatch".into()),
-                "TextForgeParamTypes::decode_full_param_as_valtype",
+                TextForgeErrorCode::BytecodeParsingError("a parameter record does not match its declared size; the file is corrupt or was not written by TextForge".into()),
+                "bytecode parameter",
                 format!("declared={}, actual={}", total, full_param.len()),
             ));
         }
@@ -776,8 +859,8 @@ impl TextForgeParamTypes {
         let remaining = full_param.len().saturating_sub(cursor.position() as usize);
         if payload_size > remaining {
             return Err(TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Payload exceeds remaining".into()),
-                "TextForgeParamTypes::decode_full_param_as_valtype",
+                TextForgeErrorCode::BytecodeParsingError("a parameter declares more bytes than its record holds; the file is corrupt or was not written by TextForge".into()),
+                "bytecode parameter",
                 format!("payload_size={}, remaining={}", payload_size, remaining),
             ));
         }
@@ -789,9 +872,9 @@ impl TextForgeParamTypes {
                 let text = str::from_utf8(&payload).map_err(|e| {
                     TextForgeError::new(
                         TextForgeErrorCode::BytecodeParamParsingError(
-                            "Failed parsing bytes to UTF8 string".into(),
+                            "a text parameter in the bytecode is not valid UTF-8".into(),
                         ),
-                        "TextForgeParamTypes::from_bytecode(VarRef)",
+                        "bytecode parameter",
                         e.to_string(),
                     )
                 })?;
@@ -799,15 +882,17 @@ impl TextForgeParamTypes {
                 let name = text.trim();
                 if name.is_empty() {
                     return Err(TextForgeError::new(
-                        TextForgeErrorCode::BytecodeParamParsingError("Empty VarRef name".into()),
-                        "TextForgeParamTypes::from_bytecode(VarRef)",
+                        TextForgeErrorCode::BytecodeParamParsingError(
+                            "a variable reference in the bytecode has an empty name".into(),
+                        ),
+                        "bytecode parameter",
                         "",
                     ));
                 }
                 Ok(ValType::VarRef(name.to_string()))
             }
 
-            // Qualquer outro tipo é Literal(TextForgeParamTypes)
+            // Any other type is a Literal(TextForgeParamTypes)
             _ => Ok(ValType::Literal(Self::decode_param_payload(
                 ty,
                 payload,
@@ -818,7 +903,7 @@ impl TextForgeParamTypes {
     }
 
     // --------------------------
-    // Helpers de leitura de bytecode
+    // Bytecode reading helpers
     // --------------------------
 
     fn read_exact_vec(
@@ -829,7 +914,7 @@ impl TextForgeParamTypes {
         let mut buf = vec![0u8; len];
         reader.read_exact(&mut buf).map_err(|e| {
             TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Failed reading bytecode".into()),
+                TextForgeErrorCode::BytecodeParsingError("the bytecode ended inside a parameter; the file is corrupt or was not written by TextForge".into()),
                 instruction,
                 e.to_string(),
             )
@@ -844,7 +929,7 @@ impl TextForgeParamTypes {
         let mut b = [0u8; 1];
         reader.read_exact(&mut b).map_err(|e| {
             TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Failed reading bytecode".into()),
+                TextForgeErrorCode::BytecodeParsingError("the bytecode ended inside a parameter; the file is corrupt or was not written by TextForge".into()),
                 instruction,
                 e.to_string(),
             )
@@ -859,7 +944,7 @@ impl TextForgeParamTypes {
         let mut b = [0u8; 4];
         reader.read_exact(&mut b).map_err(|e| {
             TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Failed reading bytecode".into()),
+                TextForgeErrorCode::BytecodeParsingError("the bytecode ended inside a parameter; the file is corrupt or was not written by TextForge".into()),
                 instruction,
                 e.to_string(),
             )
@@ -874,7 +959,7 @@ impl TextForgeParamTypes {
         let mut b = [0u8; 8];
         reader.read_exact(&mut b).map_err(|e| {
             TextForgeError::new(
-                TextForgeErrorCode::BytecodeParsingError("Failed reading bytecode".into()),
+                TextForgeErrorCode::BytecodeParsingError("the bytecode ended inside a parameter; the file is corrupt or was not written by TextForge".into()),
                 instruction,
                 e.to_string(),
             )
@@ -885,8 +970,8 @@ impl TextForgeParamTypes {
     fn peek_u64_be(bytes: &[u8]) -> Result<u64, TextForgeError> {
         let b: [u8; 8] = bytes.try_into().map_err(|_| {
             TextForgeError::new(
-                TextForgeErrorCode::BytecodeParamParsingError("Failed reading u64 header".into()),
-                "TextForgeParamTypes::peek_u64_be",
+                TextForgeErrorCode::BytecodeParamParsingError("the bytecode ended inside a size field; the file is corrupt or was not written by TextForge".into()),
+                "bytecode parameter",
                 format!("len={}", bytes.len()),
             )
         })?;
@@ -903,6 +988,7 @@ impl TextForgeParamTypes {
             TextForgeParamTypes::Usize(_) => PARAM_USIZE,
             TextForgeParamTypes::Token(_) => PARAM_TOKEN,
             TextForgeParamTypes::VarRef(_) => PARAM_VARREF,
+            TextForgeParamTypes::Pipeline(_) => PARAM_PIPELINE,
         }
     }
 
@@ -939,6 +1025,7 @@ impl TextForgeParamTypes {
                 None => t.to_bytecode_unresolved()?,
             },
             TextForgeParamTypes::VarRef(s) => s.as_bytes().to_vec(),
+            TextForgeParamTypes::Pipeline(state) => encode_pipeline(state)?,
         };
 
         let payload_size_u32: u32 = payload.len() as u32;
@@ -962,4 +1049,34 @@ impl TextForgeParamTypes {
         let total = u64::from_be_bytes(result[0..8].try_into().unwrap());
         Ok((total, result))
     }
+}
+
+/// Bytecode payload of a joined pipeline: instruction count (u32), then each
+/// instruction record as in a bytecode file body.
+#[cfg(feature = "bytecode")]
+fn encode_pipeline(state: &crate::parser::joins::JoinState) -> Result<Vec<u8>, TextForgeError> {
+    let crate::parser::joins::JoinState::Loaded(pipeline) = state else {
+        return Err(TextForgeError::new(
+            TextForgeErrorCode::SerializationError(
+                "a ppjn pipeline must be loaded before it is saved as bytecode; register the pipeline first (registering loads its joins)".into(),
+            ),
+            "ppjn",
+            "",
+        ));
+    };
+    let count = u32::try_from(pipeline.tokens().len()).map_err(|_| {
+        TextForgeError::new(
+            TextForgeErrorCode::SerializationError(
+                "the joined pipeline has more instructions than bytecode can count (4,294,967,295)"
+                    .into(),
+            ),
+            "ppjn",
+            "",
+        )
+    })?;
+    let mut payload = count.to_be_bytes().to_vec();
+    for token in pipeline.tokens() {
+        payload.extend_from_slice(&token.to_bytecode_unresolved()?);
+    }
+    Ok(payload)
 }

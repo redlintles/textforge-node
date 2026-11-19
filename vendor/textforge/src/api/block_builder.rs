@@ -1,3 +1,5 @@
+//! [`BlockBuilder`]: the body of a block (`blk`) built in Rust, executed later
+//! with `cblk`.
 use super::{builder::tree::Node, conditional_builder::ConditionalBuilderEach};
 use crate::tokens::instructions::ifdc::Ifdc;
 use crate::{
@@ -22,6 +24,7 @@ pub struct BlockBuilder {
 }
 
 impl BlockBuilder {
+    /// An empty body for block `block_name`.
     pub fn new(block_name: &'static str) -> Self {
         BlockBuilder {
             block_name,

@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn transform_replaces_last_match_when_regex_groups() {
-        // aqui "a+" casa o bloco inteiro como UM match, então trocar "último match" == trocar o único match.
+        // "a+" matches the whole run as ONE match, so the last match is the only match.
         let t = Rlw::new("a+", "b").unwrap();
         let mut ctx = GlobalExecutionContext::new();
 
@@ -88,7 +88,7 @@ mod tests {
 
     #[test]
     fn transform_handles_utf8_safely() {
-        // se o regex encontra "ã", a substituição precisa manter UTF-8 correto
+        // when the regex finds "ã", the replacement must keep the UTF-8 valid
         let t = Rlw::new("ã", "A").unwrap();
         let mut ctx = GlobalExecutionContext::new();
 
@@ -147,14 +147,16 @@ mod tests {
             let mut t = Rlw::default();
 
             let params = vec![
-                TextForgeParamTypes::Usize(7), // deveria ser String (pattern)
+                TextForgeParamTypes::Usize(7), // should be String (pattern)
                 TextForgeParamTypes::String("b".to_string()),
             ];
 
             let got = t.set_params(&params);
 
             let expected = Err(crate::utils::errors::TextForgeError::new(
-                TextForgeErrorCode::InvalidParameters("Pattern should be of string type".into()),
+                TextForgeErrorCode::InvalidParameters(
+                    "parameter 1 (`pattern`) must be text, but it is a number".into(),
+                ),
                 "",
                 "",
             ));
@@ -174,8 +176,10 @@ mod tests {
             let got = t.set_params(&params);
 
             let expected = Err(crate::utils::errors::TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Failed to create regex".into()),
-                "sslt",
+                TextForgeErrorCode::TextParsingError(
+                    "`(` is not a valid regular expression".into(),
+                ),
+                "rlw",
                 "(".to_string(),
             ));
 

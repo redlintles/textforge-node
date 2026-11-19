@@ -11,7 +11,7 @@ use crate::parser::params::TextForgeParamTypes;
 use crate::utils::errors::{TextForgeError, TextForgeErrorCode};
 use crate::utils::validations::check_vec_len;
 
-/// Jsonu - Json Unescape
+/// `jsonu;` — Unescape a JSON string.
 ///
 /// Unescapes JSON Special Characters in `input` with serde_json::from_str
 ///
@@ -56,9 +56,11 @@ impl InstructionMethods for Jsonu {
         if !input.contains('\\') {
             let result = serde_json::from_str::<&str>(&input).map_err(|_| {
                 TextForgeError::new(
-                    TextForgeErrorCode::TextParsingError("Failed to deserialize to JSON".into()),
-                    "serde_json::from_str",
-                    input.to_string(),
+                    TextForgeErrorCode::TextParsingError(
+                "the text is not a JSON string literal; `jsonu` expects a quoted, escaped string such as \"a\\nb\"".into(),
+            ),
+                    "jsonu",
+                    crate::utils::errors::input_excerpt(&input),
                 )
             })?;
             let start = result.as_ptr() as usize - input.as_ptr() as usize;
@@ -67,9 +69,11 @@ impl InstructionMethods for Jsonu {
         }
         let result = serde_json::from_str::<String>(input.as_ref()).map_err(|_| {
             TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Failed to deserialize to JSON".into()),
-                "serde_json::from_str",
-                input.to_string(),
+                TextForgeErrorCode::TextParsingError(
+                    "the text is not a JSON string literal; `jsonu` expects a quoted, escaped string such as \"a\\nb\"".into(),
+                ),
+                "jsonu",
+                crate::utils::errors::input_excerpt(&input),
             )
         })?;
         Ok(result.into())

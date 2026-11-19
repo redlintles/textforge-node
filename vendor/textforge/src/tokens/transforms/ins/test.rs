@@ -9,6 +9,17 @@ mod tests {
     use crate::utils::errors::TextForgeErrorCode;
 
     #[test]
+    fn out_of_range_index_on_empty_input_is_an_error_not_a_panic() {
+        // Building the error message used to compute `0 - 1` and overflow.
+        let t = Ins::new(1, "x");
+        let error = t.transform("".into(), None).unwrap_err();
+        assert!(matches!(
+            error.error_code,
+            TextForgeErrorCode::IndexOutOfRange(_)
+        ));
+    }
+
+    #[test]
     fn params_sets_fields_and_to_textforge_line_formats() {
         let t = Ins::new(2, "laranja");
         assert_eq!(t.to_textforge_line().as_ref(), "ins 2 laranja;\n");
@@ -29,8 +40,8 @@ mod tests {
     }
 
     #[test]
-    fn transform_index_zero_inserts_after_first_char() {
-        // index 0 -> after 'b'
+    fn transform_index_zero_inserts_at_the_start() {
+        // index 0 -> before 'b' (up to 0.3.1: after it)
         let t = Ins::new(0, "X");
         let mut ctx = GlobalExecutionContext::new();
 
@@ -38,14 +49,14 @@ mod tests {
             t.transform("banana".into(), Some(&mut ctx))
                 .unwrap()
                 .to_string(),
-            "bXanana"
+            "Xbanana"
         );
     }
 
     #[test]
     fn transform_index_last_char_appends_after_last_char() {
         // chars: b a n a n a (len 6), last index = 5
-        // usa nth(index+1) -> None -> split_at(len) => append
+        // uses nth(index+1) -> None -> split_at(len) => append
         let t = Ins::new(5, "X");
         let mut ctx = GlobalExecutionContext::new();
 
@@ -59,8 +70,8 @@ mod tests {
 
     #[test]
     fn transform_index_equal_char_count_appends_current_behavior() {
-        // detalhe: o código só erra se index > chars_count, então index == chars_count PASSA.
-        // byte_index usa nth(index+1) => None -> append.
+        // the code fails only when index > chars_count, so index == chars_count is accepted.
+        // byte_index uses nth(index+1) => None -> append.
         let t = Ins::new(6, "X"); // chars_count("banana") = 6
         let mut ctx = GlobalExecutionContext::new();
 
@@ -75,7 +86,7 @@ mod tests {
     #[test]
     fn transform_unicode_safe_insertion_boundary() {
         // input: "ábc" (chars: á b c)
-        // index 0 => after 'á'
+        // index 0 => at the start; index 1 => after 'b', never inside 'á'
         let t = Ins::new(0, "X");
         let mut ctx = GlobalExecutionContext::new();
 
@@ -83,7 +94,7 @@ mod tests {
             t.transform("ábc".into(), Some(&mut ctx))
                 .unwrap()
                 .to_string(),
-            "áXbc"
+            "Xábc"
         );
     }
 
@@ -95,11 +106,8 @@ mod tests {
         let got = t.transform("abc".into(), Some(&mut ctx));
         assert!(got.is_err());
 
-        // opcional: valida o tipo do erro (não o texto, pq tem detalhe bytes/chars)
+        // checks the error kind, not the text
         if let Err(e) = got {
-            // TextForgeError é PartialEq, mas mensagem varia. Checamos só o código.
-            // (Não temos getter do code aqui, então comparamos o TextForgeError completo é chato.)
-            // Ainda assim, dá pra comparar construindo exatamente se quiser.
             let _ = e;
         }
     }
@@ -139,9 +147,11 @@ mod tests {
 
         let got = t.set_params(&params);
 
-        // primeiro parse_args! falha com "Index should be of usize type"
+        // the first parse_args! fails with "parameter 1 (`index`) must be a non-negative integer, but it is text"
         let expected = Err(crate::utils::errors::TextForgeError::new(
-            TextForgeErrorCode::InvalidParameters("Index should be of usize type".into()),
+            TextForgeErrorCode::InvalidParameters(
+                "parameter 1 (`index`) must be a non-negative integer, but it is text".into(),
+            ),
             "",
             "",
         ));
@@ -150,7 +160,7 @@ mod tests {
     }
 
     // ============================
-    // Bytecode-only tests (separados)
+    // Bytecode-only tests
     // ============================
     #[cfg(feature = "bytecode")]
     mod bytecode_tests {
@@ -168,7 +178,7 @@ mod tests {
             let t = Ins::new(7, "laranja");
             let bc = t.to_bytecode().unwrap();
 
-            // header mínimo: 8 + 4 + 1 = 13
+            // minimum header: 8 + 4 + 1 = 13
             assert!(bc.len() >= 13);
 
             let mut i = 0;

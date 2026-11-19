@@ -6,14 +6,14 @@ use std::borrow::Cow;
 use crate::{
     context::execution_context::GlobalExecutionContext,
     tokens::InstructionMethods,
-    utils::validations::{check_index_against_input, check_vec_len},
+    utils::validations::{check_index_against_words, check_vec_len},
 };
 
 use crate::utils::errors::TextForgeError;
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// Token `Cts` — Capitalize Single
+/// `cts {index};` — Capitalize word `index`.
 ///
 /// Capitalizes a single word at the given index `i` within the input string.
 ///
@@ -32,11 +32,13 @@ use crate::parser::params::TextForgeParamTypes;
 
 #[derive(Clone, Default)]
 pub struct Cts {
+    /// The index the instruction applies to.
     pub index: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Cts {
+    /// Builds `cts {index};` with the given parameters.
     pub fn new(index: usize) -> Self {
         Cts {
             index,
@@ -61,19 +63,19 @@ impl InstructionMethods for Cts {
         input: Cow<'a, str>,
         _: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
-        check_index_against_input(self.index, &input)?;
-        let mut result = String::with_capacity(input.len());
-        for (i, word) in input.split_whitespace().enumerate() {
-            if i != 0 {
-                result.push(' ');
-            }
-            if i == self.index {
-                crate::utils::allocation::capitalize_into(&mut result, word);
-            } else {
-                result.push_str(word);
-            }
-        }
-        Ok(result.into())
+        check_index_against_words(self.index, &input)?;
+        // Only the words change; separators (line breaks included) are kept.
+        Ok(crate::utils::allocation::rewrite_words(
+            input,
+            self.index,
+            |i, word| {
+                (i == self.index).then(|| {
+                    let mut capitalized = String::with_capacity(word.len());
+                    crate::utils::allocation::capitalize_into(&mut capitalized, word);
+                    capitalized
+                })
+            },
+        ))
     }
 
     fn to_textforge_line(&self) -> Cow<'static, str> {
@@ -84,7 +86,7 @@ impl InstructionMethods for Cts {
 
         check_vec_len(params, 1, "cts", "")?;
 
-        self.index = parse_args!(params, 0, Usize, "Index should be of usize type");
+        self.index = parse_args!(params, 0, Usize, "index");
         self.params = vec![self.index.into()];
 
         Ok(())

@@ -13,9 +13,9 @@ pub fn string_to_usize(chunk: &str) -> Result<usize, TextForgeError> {
             let str_chunk = chunk.to_string();
             Err(TextForgeError::new(
                 super::errors::TextForgeErrorCode::TextParsingError(
-                    "String to usize Parsing failed".into(),
+                    format!("`{str_chunk}` is not a non-negative integer").into(),
                 ),
-                Cow::Owned(str_chunk),
+                Cow::Borrowed(""),
                 chunk.to_string(),
             ))
         }
@@ -32,6 +32,58 @@ pub fn extend_string(input: &str, max_len: usize) -> String {
     input.chars().cycle().take(max_len).collect()
 }
 
+/// An empty string with room for `chars` characters of `text` repeated (as
+/// [`extend_string`] builds them) plus `extra` bytes. A size that cannot be
+/// represented or allocated is an error instead of a panic or an abort.
+/// `text` must not be empty.
+pub(crate) fn reserve_padding(
+    text: &str,
+    chars: usize,
+    extra: usize,
+    instruction: &'static str,
+    limits: &crate::api::Limits,
+) -> Result<String, TextForgeError> {
+    let error = |detail: String| {
+        TextForgeError::new(
+            super::errors::TextForgeErrorCode::ValidationError(
+                "the padded text is too large to allocate".into(),
+            ),
+            instruction,
+            detail,
+        )
+    };
+    let count = text.chars().count().max(1);
+    let rest = text
+        .char_indices()
+        .nth(chars % count)
+        .map_or(text.len(), |(i, _)| i);
+    let bytes = (chars / count)
+        .checked_mul(text.len())
+        .and_then(|bytes| bytes.checked_add(rest))
+        .and_then(|bytes| bytes.checked_add(extra))
+        .ok_or_else(|| error(format!("padding of {chars} characters overflows")))?;
+    limits.check_generated(Some(bytes as u128), instruction)?;
+    let mut output = String::new();
+    output
+        .try_reserve_exact(bytes)
+        .map_err(|e| error(format!("{bytes} bytes: {e}")))?;
+    Ok(output)
+}
+
+/// Append `chars` characters of `text`, repeated (see [`extend_string`]).
+/// `text` must not be empty.
+pub(crate) fn push_padding(output: &mut String, text: &str, chars: usize) {
+    let count = text.chars().count().max(1);
+    for _ in 0..chars / count {
+        output.push_str(text);
+    }
+    let end = text
+        .char_indices()
+        .nth(chars % count)
+        .map_or(text.len(), |(i, _)| i);
+    output.push_str(&text[..end]);
+}
+
 pub fn get_safe_utf8_char_index(index: usize, input: &str) -> Result<usize, TextForgeError> {
     input
         .char_indices()
@@ -39,25 +91,24 @@ pub fn get_safe_utf8_char_index(index: usize, input: &str) -> Result<usize, Text
         .map(|(i, _)| i)
         .ok_or_else(|| {
             TextForgeError::new(
-                super::errors::TextForgeErrorCode::IndexOutOfRange("".into()),
-                Cow::Borrowed("Get safe utf-8 char index"),
-                input.to_string(),
+                super::errors::TextForgeErrorCode::IndexOutOfRange(
+                    format!(
+                        "character index {index} is out of range: the text has {}",
+                        crate::utils::errors::plural(input.chars().count(), "character")
+                    )
+                    .into(),
+                ),
+                Cow::Borrowed(""),
+                crate::utils::errors::input_excerpt(input),
             )
         })
 }
 
 // tests for utils/string utils (or wherever these fns live)
 //
-// Observação: estes testes assumem que:
-// - o feature flag "test_access" existe no seu Cargo.toml
-// - as funções estão acessíveis via `crate::utils::...` (ajuste o `use` se o caminho real for outro)
-// - TextForgeError expõe `code` (ou getter equivalente) para checar o tipo do erro.
-//   Se o seu TextForgeError NÃO expõe o código publicamente, mantive os asserts de erro de forma que
-//   você consiga facilmente trocar para `format!("{err:?}")` / `.to_string()` / etc.
 
 #[cfg(feature = "test_access")]
 mod test_access {
-    // Ajuste este path se as funções estiverem em outro módulo.
     // Ex: use crate::utils::text::{string_to_usize, capitalize, extend_string, get_safe_utf8_char_index};
 
     #[cfg(test)]
@@ -83,7 +134,7 @@ mod test_access {
         fn rejects_non_numeric() {
             let err = string_to_usize("abc").unwrap_err();
 
-            // Se TextForgeError tiver `code` público:
+            // Check the error kind:
             assert!(
                 matches!(err.error_code, TextForgeErrorCode::TextParsingError(_)),
                 "expected TextParsingError, got: {err:?}"
@@ -112,7 +163,7 @@ mod test_access {
 
         #[test]
         fn rejects_with_whitespace_if_not_trimmed_by_caller() {
-            // Sua função não faz trim; então isto deve falhar.
+            // The function does not trim, so this must fail.
             let err = string_to_usize(" 10").unwrap_err();
 
             assert!(
@@ -123,8 +174,8 @@ mod test_access {
 
         #[test]
         fn rejects_overflow() {
-            // usize::MAX + "1" de forma portável: usamos um número bem grande.
-            // (Qualquer coisa absurdamente grande deve dar erro de parse por overflow.)
+            // A portable usize::MAX + 1: a very large number.
+            // (Anything absurdly large must fail to parse with an overflow.)
             let err = string_to_usize("999999999999999999999999999999999999999").unwrap_err();
 
             assert!(
@@ -151,22 +202,22 @@ mod test_access {
 
         #[test]
         fn preserves_rest_of_string_without_lowercasing() {
-            // A função só uppercasa o primeiro char; o resto fica como está.
+            // Only the first char is uppercased; the rest stays as it is.
             assert_eq!(capitalize("bANANA"), "BANANA");
             assert_eq!(capitalize("bAnAnA"), "BAnAnA");
         }
 
         #[test]
         fn handles_utf8_first_char() {
-            // Exercita unicode no primeiro char (não só ASCII).
+            // Unicode in the first char (not just ASCII).
             assert_eq!(capitalize("área"), "Área");
             assert_eq!(capitalize("çasa"), "Çasa");
         }
 
         #[test]
         fn handles_case_where_uppercase_expands_to_multiple_chars() {
-            // Em Unicode, alguns caracteres podem virar mais de 1 char ao uppercasing.
-            // Ex clássico: "ß" -> "SS" (depende do mapeamento Unicode do Rust, mas em geral é isso).
+            // In Unicode, some characters become more than one char when uppercased.
+            // Classic example: "ß" -> "SS".
             let out = capitalize("ßeta");
             assert!(out.starts_with("SS") || out.starts_with("ẞ"), "got: {out}");
         }
@@ -196,11 +247,11 @@ mod test_access {
 
         #[test]
         fn respects_char_count_not_byte_count_utf8() {
-            // "á" é multibyte, mas conta como 1 char.
+            // "á" is multi-byte but counts as one char.
             assert_eq!(extend_string("á", 1), "á");
             assert_eq!(extend_string("á", 3), "ááá");
 
-            // Emoji também é multibyte.
+            // Emoji are multi-byte too.
             assert_eq!(extend_string("🔥", 2), "🔥🔥");
         }
 
@@ -238,9 +289,9 @@ mod test_access {
 
         #[test]
         fn returns_correct_byte_index_utf8() -> Result<(), TextForgeError> {
-            // "á" ocupa 2 bytes em UTF-8.
+            // "á" takes 2 bytes in UTF-8.
             let input = "ábc";
-            // indices de chars: 0:'á'(byte 0), 1:'b'(byte 2), 2:'c'(byte 3)
+            // char indices: 0:'á'(byte 0), 1:'b'(byte 2), 2:'c'(byte 3)
             assert_eq!(get_safe_utf8_char_index(0, input)?, 0);
             assert_eq!(get_safe_utf8_char_index(1, input)?, 2);
             assert_eq!(get_safe_utf8_char_index(2, input)?, 3);
@@ -249,7 +300,7 @@ mod test_access {
 
         #[test]
         fn returns_correct_byte_index_with_emoji() -> Result<(), TextForgeError> {
-            // "🔥" é 4 bytes.
+            // "🔥" is 4 bytes.
             let input = "a🔥b";
             // 0:'a'(0), 1:'🔥'(1), 2:'b'(5)
             assert_eq!(get_safe_utf8_char_index(0, input)?, 0);
@@ -261,7 +312,7 @@ mod test_access {
         #[test]
         fn errors_when_index_out_of_range() {
             let input = "abc";
-            let err = get_safe_utf8_char_index(3, input).unwrap_err(); // len == 3, último índice válido == 2
+            let err = get_safe_utf8_char_index(3, input).unwrap_err(); // len == 3, the last valid index is 2
 
             assert!(
                 matches!(err.error_code, TextForgeErrorCode::IndexOutOfRange(_)),

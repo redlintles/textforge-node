@@ -8,9 +8,12 @@ use crate::utils::errors::TextForgeError;
 
 use crate::parser::params::TextForgeParamTypes;
 use crate::utils::validations::check_vec_len;
-use crate::{tokens::InstructionMethods, utils::validations::check_chunk_bound_indexes};
+use crate::{
+    tokens::InstructionMethods,
+    utils::validations::{check_chunk_bound_indexes, check_index_against_words},
+};
 
-/// Token `Ctr` — Capitalize Range
+/// `ctr {start} {end};` — Capitalize words `start..=end`.
 ///
 /// Capitalizes a range of words delimited by `start_index` and `end_index`(inclusive)
 ///
@@ -30,12 +33,17 @@ use crate::{tokens::InstructionMethods, utils::validations::check_chunk_bound_in
 ///
 #[derive(Clone, Default)]
 pub struct Ctr {
+    /// First character or word of the inclusive range.
     pub start_index: usize,
+    /// Last character or word of the inclusive range.
     pub end_index: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Ctr {
+    /// Builds `ctr {start} {end};` with the given parameters.
+    ///
+    /// Fails if the parameters are invalid (for a range, if `start > end`).
     pub fn new(start_index: usize, end_index: usize) -> Result<Self, TextForgeError> {
         check_chunk_bound_indexes(start_index, end_index, None)?;
         Ok(Ctr {
@@ -62,32 +70,31 @@ impl InstructionMethods for Ctr {
         input: Cow<'a, str>,
         _: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
-        if input.trim().is_empty() {
-            return Ok(input);
-        }
-
-        // Since the user will probably not know the length of the string in the middle of the processing
-        // Better simply adjust end_index to input.len() if its bigger. instead of throwing an "hard to debug" error
+        // An end past the last word means the last word (Golden Rule 21). A
+        // text with no words has no start, so it is an error like in `cts`
+        // and `tucw` (Golden Rules 18 and 23).
 
         let mut end = self.end_index;
         let total = input.split_whitespace().count();
         if end > total {
             end = total;
         }
-        check_chunk_bound_indexes(self.start_index, end, Some(&input))?;
+        // Indices count words, not characters.
+        check_index_against_words(self.start_index, &input)?;
+        check_chunk_bound_indexes(self.start_index, end, None)?;
 
-        let mut result = String::with_capacity(input.len());
-        for (i, word) in input.split_whitespace().enumerate() {
-            if i != 0 {
-                result.push(' ');
-            }
-            if (self.start_index..=end).contains(&i) {
-                crate::utils::allocation::capitalize_into(&mut result, word);
-            } else {
-                result.push_str(word);
-            }
-        }
-        Ok(result.into())
+        // Only the words change; separators (line breaks included) are kept.
+        Ok(crate::utils::allocation::rewrite_words(
+            input,
+            end,
+            |i, word| {
+                ((self.start_index..=end).contains(&i)).then(|| {
+                    let mut capitalized = String::with_capacity(word.len());
+                    crate::utils::allocation::capitalize_into(&mut capitalized, word);
+                    capitalized
+                })
+            },
+        ))
     }
 
     fn to_textforge_line(&self) -> Cow<'static, str> {
@@ -98,8 +105,8 @@ impl InstructionMethods for Ctr {
 
         check_vec_len(params, 2, "ctr", "")?;
 
-        self.start_index = parse_args!(params, 0, Usize, "Index should be of usize type");
-        self.end_index = parse_args!(params, 1, Usize, "Index should be of usize type");
+        self.start_index = parse_args!(params, 0, Usize, "start");
+        self.end_index = parse_args!(params, 1, Usize, "end");
         self.params = vec![self.start_index.into(), self.end_index.into()];
 
         Ok(())

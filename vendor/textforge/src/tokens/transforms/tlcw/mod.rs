@@ -11,7 +11,7 @@ use crate::{
     utils::{errors::TextForgeError, validations::check_index_against_words},
 };
 
-/// TLCW - To Lowercase Word
+/// `tlcw {index};` — Lowercase word `index`.
 ///
 /// Lowercase a single word of string
 ///
@@ -22,7 +22,7 @@ use crate::{
 ///
 /// let token = Tlcw::new(1);
 ///
-/// assert_eq!(token.transform("BANANA LARANJA CHEIA DE CANJA".into(),None).unwrap().to_string(), "BANANA laranja CHEIA DE CANJA");
+/// assert_eq!(token.transform("BANANA ORANGE FULL OF JAM".into(),None).unwrap().to_string(), "BANANA orange FULL OF JAM");
 ///
 /// ```
 #[derive(Clone, Default)]
@@ -32,6 +32,7 @@ pub struct Tlcw {
 }
 
 impl Tlcw {
+    /// Builds `tlcw {index};` with the given parameters.
     pub fn new(index: usize) -> Self {
         Tlcw {
             index,
@@ -61,18 +62,12 @@ impl InstructionMethods for Tlcw {
         _: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
         check_index_against_words(self.index, input.as_ref())?;
-        let mut result = String::with_capacity(input.len());
-        for (i, word) in input.split_whitespace().enumerate() {
-            if i != 0 {
-                result.push(' ');
-            }
-            if i == self.index {
-                result.push_str(&word.to_lowercase());
-            } else {
-                result.push_str(word);
-            }
-        }
-        Ok(result.into())
+        // Only the word changes; separators (line breaks included) are kept.
+        Ok(crate::utils::allocation::rewrite_words(
+            input,
+            self.index,
+            |i, word| (i == self.index).then(|| word.to_lowercase()),
+        ))
     }
 
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
@@ -80,7 +75,7 @@ impl InstructionMethods for Tlcw {
 
         check_vec_len(params, 1, "tlcw", "")?;
 
-        self.index = parse_args!(params, 0, Usize, "Index should be of usize type");
+        self.index = parse_args!(params, 0, Usize, "index");
         self.params = vec![self.index.into()];
 
         Ok(())

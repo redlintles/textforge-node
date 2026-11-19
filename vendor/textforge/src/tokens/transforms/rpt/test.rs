@@ -13,9 +13,13 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             error.error_code,
-            TextForgeErrorCode::ValidationError(_)
+            TextForgeErrorCode::LimitExceededError(_)
         ));
-        assert_eq!(error.instruction, "rpt");
+        let message = error.error_code.message();
+        assert!(
+            message.contains("repeat") || message.contains("`rpt`"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -25,7 +29,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             error.error_code,
-            TextForgeErrorCode::ValidationError(_)
+            TextForgeErrorCode::LimitExceededError(_)
         ));
     }
 
@@ -148,7 +152,7 @@ mod tests {
             let bc = t.to_bytecode().unwrap();
 
             assert!(!bc.is_empty());
-            assert!(bc.len() >= 13); // header mínimo
+            assert!(bc.len() >= 13); // minimum header
 
             let mut i = 0;
 

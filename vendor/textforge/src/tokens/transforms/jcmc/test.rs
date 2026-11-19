@@ -20,6 +20,31 @@ mod tests {
         assert_eq!(t.to_textforge_line().as_ref(), "jcmc;\n");
     }
 
+    /// Before 0.3.2 the letters after the first were copied as they were
+    /// ("HelloWorld", "hTTPServer").
+    #[test]
+    fn the_first_letter_is_lowercased() {
+        let t = Jcmc::default();
+        for (input, expected) in [
+            ("Hello World", "helloWorld"),
+            ("Élan vital", "élanVital"),
+            ("HTTP server", "httpServer"),
+            ("HELLO WORLD", "helloWorld"),
+            ("ÉLAN VITAL", "élanVital"),
+            ("x ΟΣ", "xΟς"),
+            ("x İ", "xİ"),
+            ("already camel", "alreadyCamel"),
+            ("👍 ok", "👍Ok"),
+            ("", ""),
+        ] {
+            assert_eq!(
+                t.transform(input.into(), None).unwrap(),
+                expected,
+                "{input:?}"
+            );
+        }
+    }
+
     #[test]
     fn transform_matches_doc_example() {
         let t = Jcmc::default();
@@ -48,7 +73,7 @@ mod tests {
 
     #[test]
     fn transform_trims_and_collapses_whitespace() {
-        // split_whitespace() colapsa espaços/tabs/newlines
+        // split_whitespace() collapses spaces, tabs and newlines
         let t = Jcmc::default();
         let mut ctx = GlobalExecutionContext::new();
 
@@ -79,7 +104,7 @@ mod tests {
         let t = Jcmc::default();
         let mut ctx = GlobalExecutionContext::new();
 
-        // depende do capitalize() do seu projeto, mas normalmente:
+        // capitalize() uppercases the first char:
         // "maçã" -> "Maçã"
         assert_eq!(
             t.transform("maçã com canela".into(), Some(&mut ctx))
@@ -111,7 +136,7 @@ mod tests {
     }
 
     // ============================
-    // Bytecode-only tests (separados)
+    // Bytecode-only tests
     // ============================
     #[cfg(feature = "bytecode")]
     mod bytecode_tests {
@@ -128,7 +153,7 @@ mod tests {
             let t = Jcmc::default();
             let bc = t.to_bytecode().unwrap();
 
-            // header mínimo: 8 + 4 + 1 = 13
+            // minimum header: 8 + 4 + 1 = 13
             assert!(bc.len() >= 13);
 
             let mut i = 0;
@@ -136,7 +161,7 @@ mod tests {
             let total_size = u64::from_be_bytes(bc[i..i + 8].try_into().unwrap());
             i += 8;
 
-            // total_size = tamanho do "body" (opcode+count+params...)
+            // total_size = size of the body (opcode + count + params...)
             assert_eq!(total_size as usize, bc.len() - 8);
 
             let opcode = u32::from_be_bytes(bc[i..i + 4].try_into().unwrap());

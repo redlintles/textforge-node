@@ -8,6 +8,13 @@ mod tests {
     use crate::utils::errors::{TextForgeError, TextForgeErrorCode};
 
     #[test]
+    fn end_past_empty_input_is_an_error_not_a_panic() {
+        // Clamping the end index used to compute `0 - 1` and overflow.
+        let t = crate::tokens::transforms::slt::Slt::new(0, 3).unwrap();
+        assert!(t.transform("".into(), None).is_err());
+    }
+
+    #[test]
     fn get_string_repr_is_slt() {
         let t = Slt::default();
         assert_eq!(t.get_string_repr(), "slt");
@@ -63,7 +70,7 @@ mod tests {
 
     #[test]
     fn transform_rejects_invalid_bounds() {
-        // start > end deve falhar (quem define isso é seu check_chunk_bound_indexes)
+        // start > end must fail (checked by check_chunk_bound_indexes)
         let t = Slt::new(5, 1);
 
         assert!(t.is_err());
@@ -109,7 +116,7 @@ mod tests {
             let t = Slt::new(1, 3).unwrap();
             let bc = t.to_bytecode().unwrap();
 
-            // Formato: [u64 total_size_be][u32 opcode_be][u8 param_count]...
+            // Layout: [u64 total_size_be][u32 opcode_be][u8 param_count]...
             assert!(bc.len() >= 13);
 
             let total_size = u64::from_be_bytes(bc[0..8].try_into().unwrap()) as usize;
@@ -120,6 +127,18 @@ mod tests {
 
             let param_count = bc[12] as usize;
             assert_eq!(param_count, 2);
+        }
+
+        #[test]
+        fn end_equal_to_the_length_is_clamped_like_larger_ends() {
+            // Previously `slt 1 3` on "abc" was an error while `slt 1 4` worked.
+            use crate::tokens::{InstructionMethods, transforms::slt::Slt};
+            for end in [3, 4, 100] {
+                let token = Slt::new(1, end).unwrap();
+                assert_eq!(token.transform("abc".into(), None).unwrap(), "bc");
+            }
+            let token = Slt::new(0, 2).unwrap();
+            assert_eq!(token.transform("é👩🏽‍💻".into(), None).unwrap(), "é👩🏽");
         }
     }
 }

@@ -1,6 +1,8 @@
+//! [`TextForgeProcessor`]: registers pipelines and runs them on strings,
+//! files and batches, with optional debug output, watchers and buffering.
 #[cfg(feature = "buffered")]
 mod buffered;
-mod file_io;
+pub(crate) mod file_io;
 #[cfg(feature = "buffered")]
 pub use buffered::BufferedTask;
 
@@ -14,7 +16,6 @@ use colored::*;
 use rayon::prelude::*;
 use uuid::Uuid;
 
-#[cfg(all(feature = "watchers", not(feature = "buffered")))]
 use std::sync::Arc;
 
 #[cfg(feature = "bytecode")]
@@ -25,231 +26,121 @@ use crate::watchers::WatcherContext;
 use crate::watchers::WatcherList;
 
 use crate::api::builder::TextForgeBuilder;
+use crate::api::profile::ExecutionProfile;
 #[cfg(not(feature = "buffered"))]
 use crate::context::execution_context::GlobalContextMethods;
 use crate::context::execution_context::GlobalExecutionContext;
+use crate::context::static_context::StaticContext;
 use crate::parser::resolve_var::TokenWrapper;
 use crate::text::reader::read_from_file;
 use crate::text::writer::write_to_file;
-use crate::utils::apply::apply_transform;
-use crate::utils::errors::{
-    ErrorManager, TextForgeError, TextForgeErrorCode, token_array_not_found,
-};
+use crate::utils::apply::run_tokens;
+use crate::utils::errors::{TextForgeError, TextForgeErrorCode, token_array_not_found};
 
-/// TextForge Processor
+/// Registers pipelines and runs them.
 ///
-/// `TextForgeProcessor` is the main **execution engine** of TextForge (formerly ATP).
+/// A processor holds any number of pipelines, each identified by the string
+/// returned when it is registered. A pipeline is a list of instructions run in
+/// order: each one receives the output of the previous one. Pipelines are
+/// registered by building them in Rust ([`create_pipeline`](Self::create_pipeline)),
+/// by reading a `.textforge` file
+/// ([`get_pipeline_from_file`](TextForgeProcessorMethods::get_pipeline_from_file))
+/// or a `.textforgebc` file (`read_from_bytecode_file`, `bytecode` feature);
+/// however they were registered, they run the same way. All operations are in
+/// [`TextForgeProcessorMethods`].
 ///
-/// It stores multiple linear transformation pipelines (called **transforms**) identified
-/// by a `String` ID (generated with UUID). Each transform is a `Vec<TokenWrapper>`,
-/// i.e. a sequence of tokens executed from left to right.
-///
-/// # Core concepts
-///
-/// ## Transform (pipeline)
-/// A *transform* is a vector of tokens executed sequentially:
-///
-/// 1. Start with `result = input`
-/// 2. For each token in order: `result = token.transform(result)`
-/// 3. Return the final `result`
-///
-/// This matches TextForge's **linear** nature: there is no implicit nesting at runtime.
-/// Any logical grouping/abstraction lives at the builder / authoring layer.
-///
-/// A pipeline can end up registered in `self.transforms` through more than one path — built
-/// in-memory via [`create_pipeline`](Self::create_pipeline), parsed from a `.textforge` text
-/// file via [`get_pipeline_from_file`](TextForgeProcessorMethods::get_pipeline_from_file), or
-/// loaded from a `.textforgebc` bytecode file via
-/// `read_from_bytecode_file` — but once
-/// registered, every pipeline is executed the exact same way by the `process_*` methods.
-/// Reading/writing bytecode never processes input directly; it only moves pipelines in and out
-/// of `self.transforms`.
-///
-/// ## Error accumulation (WIP)
-/// `TextForgeProcessor` contains an `ErrorManager` meant to accumulate errors found during
-/// reading/writing/execution. At the moment, `ErrorManager` is still under construction;
-/// therefore, this should be treated as an internal error sink rather than a stable public
-/// diagnostics API.
+/// An [`ExecutionProfile`] ([`with_profile`](Self::with_profile)) decides the
+/// memory a run may use and the limits of work-multiplying instructions; it
+/// never changes results.
 ///
 /// # Examples
 ///
-/// ## 1) Build a pipeline through the processor, then run it
+/// Build a pipeline and run it:
 ///
-/// ```rust
+/// ```
 /// use textforge::api::processor::{TextForgeProcessor, TextForgeProcessorMethods};
 /// use textforge::api::TextForgeBuilderMethods;
 ///
 /// let mut processor = TextForgeProcessor::new();
-///
-/// // Build + register a transform; `build()` returns its ID.
 /// let id = processor
 ///     .create_pipeline()
 ///     .trim_both_sides()?
 ///     .add_to_end("!")?
-///     .build().unwrap();
+///     .build()?;
 ///
-/// let out = processor.process_all(&id, "   banana   ")?;
-/// assert_eq!(out, "banana!");
+/// assert_eq!(processor.process_all(&id, "   banana   ")?, "banana!");
 /// # Ok::<(), textforge::utils::errors::TextForgeError>(())
 /// ```
 ///
-/// ## 2) Step-by-step debug execution (SBS)
+/// See every step of a run (the result is the same as `process_all`; the trace
+/// is printed):
 ///
-/// ```rust
+/// ```
 /// use textforge::api::processor::{TextForgeProcessor, TextForgeProcessorMethods};
 /// use textforge::api::TextForgeBuilderMethods;
 ///
 /// let mut processor = TextForgeProcessor::new();
-///
 /// let id = processor
 ///     .create_pipeline()
-///     .add_to_beginning("Banana")?
-///     .add_to_end("pizza")?
-///     .repeat(3)?
-///     .trim_both_sides()?
-///     .build().unwrap();
-///
-/// // Prints each step: instruction + before/after.
-/// let out = processor.process_all_with_debug(&id, "Banana Laranja cheia de canja")?;
-/// println!("{out}");
-/// # Ok::<(), textforge::utils::errors::TextForgeError>(())
-/// ```
-///
-/// ## 3) Quick single-token execution (no pipeline registration)
-///
-/// ```rust
-/// use textforge::api::processor::{TextForgeProcessor, TextForgeProcessorMethods};
-/// use textforge::tokens::InstructionMethods;
-/// use textforge::tokens::transforms::tbs;
-///
-/// let mut processor = TextForgeProcessor::new();
-///
-/// let token = (Box::new(tbs::Tbs::default()) as Box<dyn InstructionMethods>).into();
-/// let out = processor.process_single(token, "   banana   ")?;
-/// assert_eq!(out, "banana");
-/// # Ok::<(), textforge::utils::errors::TextForgeError>(())
-/// ```
-///
-/// ## 4) Benchmark-style usage (as in your tests)
-///
-/// This mirrors the exact usage pattern shown in your suite:
-///
-/// ```rust
-/// use textforge::api::{
-///     TextForgeBuilderMethods,
-///     processor::{ TextForgeProcessor, TextForgeProcessorMethods },
-/// };
-/// use std::time::Instant;
-///
-/// # fn main() -> Result<(), textforge::utils::errors::TextForgeError> {
-/// let runs = 100;
-/// let mut total = 0.0;
-///
-/// let mut processor = TextForgeProcessor::new();
-///
-/// let id = processor
-///     .create_pipeline()
-///     .add_to_beginning("Banana")?
-///     .add_to_end("pizza")?
-///     .repeat(3)?
-///     .delete_after(20)?
-///     .delete_before(3)?
-///     .delete_chunk(0, 3)?
-///     .delete_first()?
-///     .delete_last()?
-///     .replace_all_with("a", "e")?
-///     .replace_first_with("L", "coxinha")?
-///     .replace_count_with("e", "carro", 3)?
-///     .insert(0, "Coxinha Banana")?
-///     .rotate_left(1)?
-///     .rotate_right(2)?
-///     .trim_both_sides()?
-///     .trim_left_side()?
-///     .trim_right_side()?
-///     .add_to_beginning("laranjadebananavermelha")?
-///     .select(3, 7)?
-///     .replace_count_with("a", "b", 3)?
+///     .add_to_beginning("[")?
+///     .add_to_end("]")?
 ///     .to_uppercase_all()?
-///     .to_lowercase_all()?
-///     .to_uppercase_single(3)?
-///     .to_lowercase_single(2)?
-///     .capitalize_first_word()?
-///     .capitalize_single_word(1)?
-///     .capitalize_last_word()?
-///     .capitalize_range(0, 3)?
-///     .split_select("B", 1)?
-///     .capitalize_chunk(0, 3)?
-///     .replace_last_with("b", "c")?
-///     .replace_nth_with("b", "d", 3)?
-///     .to_url_encoded()?
-///     .to_url_decoded()?
-///     .to_reverse()?
-///     .split_characters()?
-///     .to_html_escaped()?
-///     .to_html_unescaped()?
-///     .to_json_escaped()?
-///     .to_json_unescaped()?
-///     .insert(1, "banana")?
-///     .to_uppercase_chunk(1, 3)?
-///     .to_lowercase_chunk(0, 5)?
-///     .join_to_camel_case()?
-///     .join_to_kebab_case()?
-///     .join_to_pascal_case()?
-///     .join_to_snake_case()?
-///     .pad_left("xy", 12)?
-///     .pad_right("yx", 20)?
-///     .build().unwrap();
+///     .build()?;
 ///
-/// for _ in 0..runs {
-///     let start = Instant::now();
-///     let input = "Banana Laranja cheia de canja";
-///     let _ = processor.process_all(&id, input)?;
-///     total += start.elapsed().as_secs_f64();
-/// }
-///
-/// let avg = total / runs as f64;
-/// println!("Average: {avg:.6}s");
-/// # Ok(())
-/// # }
+/// assert_eq!(processor.process_all_with_debug(&id, "banana")?, "[BANANA]");
+/// # Ok::<(), textforge::utils::errors::TextForgeError>(())
 /// ```
 ///
-/// # Notes
+/// Run one instruction without registering a pipeline:
 ///
-/// - `build()` registers a new transform entry inside the processor and returns its UUID.
-/// - The pipeline is **one giant vector** of tokens; execution is deterministic and ordered.
-/// - Debug methods (`*_with_debug`) only add printing; they do not change execution.
+/// ```
+/// use textforge::api::processor::{TextForgeProcessor, TextForgeProcessorMethods};
+/// use textforge::tokens::{InstructionMethods, transforms::tbs::Tbs};
+///
+/// let mut processor = TextForgeProcessor::new();
+/// let token = (Box::new(Tbs::default()) as Box<dyn InstructionMethods>).into();
+/// assert_eq!(processor.process_single(token, "   banana   ")?, "banana");
+/// # Ok::<(), textforge::utils::errors::TextForgeError>(())
+/// ```
 pub struct TextForgeProcessor {
-    transforms: HashMap<String, Vec<TokenWrapper>>,
-    errors: ErrorManager,
+    transforms: HashMap<String, RegisteredPipeline>,
+    /// Engine resources; never changes results.
+    #[cfg_attr(not(feature = "buffered"), allow(dead_code))]
+    profile: ExecutionProfile,
 }
 
-/// Operational API for `TextForgeProcessor`.
+/// A registered pipeline: its instructions and the static context shared by
+/// every run that reads no input file (its name, for `__PIPELINE_NAME__`).
+struct RegisteredPipeline {
+    tokens: Vec<TokenWrapper>,
+    statics: Arc<StaticContext>,
+    /// Directory of the file the pipeline was read from; relative paths of the
+    /// file instructions start there. `None` for pipelines built in code.
+    base_dir: Option<Arc<Path>>,
+}
+
+/// Everything a [`TextForgeProcessor`] does: register, persist, inspect, remove
+/// and run pipelines.
 ///
-/// This trait defines the public "surface" of the processor: how pipelines are registered,
-/// executed, persisted, inspected, and removed.
-///
-/// A **transform** is stored internally as:
-/// `HashMap<String, Vec<TokenWrapper>>`
-///
-/// Where the key is a UUID string and the value is a linear sequence of tokens.
-///
-/// ## Error reporting
-/// Most methods will:
-/// - return `Err(TextForgeError)` on failure
-/// - and also push a copy into the internal `ErrorManager` (where you already do that)
-///
-/// The exact behavior depends on the implementation (and your `ErrorManager` is still WIP).
+/// A registered pipeline is identified by the string returned when it is
+/// registered ([`add_transform`](Self::add_transform),
+/// [`get_pipeline_from_file`](Self::get_pipeline_from_file), a builder's
+/// `build()` or `read_from_bytecode_file`).
 ///
 /// ## Method groups
-/// Methods below are grouped by responsibility:
-/// - **Pipeline persistence (text)** — move a pipeline to/from a `.textforge` text file.
-/// - **Pipeline registration & inspection** — register, remove, list, or clone pipelines.
-/// - **Processing** — the only methods that ever run a pipeline against input text.
-/// - **Bytecode persistence** (`bytecode` feature) — move a pipeline to/from a `.textforgebc`
-///   binary file. Like the text persistence methods, these never process input directly; they
-///   only read/write `self.transforms`. To run a bytecode-loaded pipeline, register it with
-///   `read_from_bytecode_file` and then call any of the
-///   `process_*` methods, the same way you would for a text- or builder-originated pipeline.
+///
+/// - **Text persistence**: save a pipeline to, or load it from, a `.textforge` file.
+/// - **Registration and inspection**: register, remove, list or copy pipelines.
+/// - **Processing**: the only methods that run a pipeline on text (`process_*`,
+///   `run_transform`), with debug, watcher and buffered variants.
+/// - **Bytecode persistence** (`bytecode` feature): the same as text
+///   persistence for `.textforgebc` files.
+///
+/// ## Errors
+///
+/// Methods return [`TextForgeError`]; print one for a person with
+/// [`TextForgeError::report`]. Before 0.4.0 the processor also kept a copy of
+/// every error in a private `ErrorManager` that nothing read.
 pub trait TextForgeProcessorMethods {
     // -----------------------------------------------------------------
     // Pipeline persistence (text format)
@@ -367,17 +258,13 @@ pub trait TextForgeProcessorMethods {
     // Processing — the only methods that run a pipeline against input
     // -----------------------------------------------------------------
 
-    /// Executes a registered transform against `input` and returns the result, without
-    /// recording anything into `self.errors`.
+    /// Executes a registered transform against `input` and returns the result.
     ///
     /// This is the shared low-level execution primitive behind
     /// [`process_all`](Self::process_all) and [`process_batch`](Self::process_batch): both
-    /// look up `id`, then run each token in order over a fresh, local `ErrorManager` and
-    /// `GlobalExecutionContext`.
-    ///
-    /// Prefer `process_all` when you want failures recorded in the processor's error log;
-    /// use `run_transform` directly when you want execution without touching `self.errors`
-    /// (e.g. read-only access, as in `process_batch`, which only borrows `&self`).
+    /// look up `id`, then run each token in order over a fresh
+    /// `GlobalExecutionContext`. It only borrows `&self`, so concurrent runs
+    /// share nothing.
     ///
     /// # Errors
     /// Returns `Err` if:
@@ -394,12 +281,8 @@ pub trait TextForgeProcessorMethods {
     /// Semantics:
     /// - `result` starts as `input`
     /// - for each token `t` in the transform:
-    ///   - `result = parse_token(t, result, &mut self.errors)?`
+    ///   - `result = t.apply_token(result, context)?`
     /// - returns the final `result`
-    ///
-    /// `parse_token` is used instead of calling `token.transform` directly because it can
-    /// integrate with your parsing/diagnostics/error flow (and will likely be where conditional
-    /// execution, blocks, etc. plug in later).
     ///
     /// # Parameters
     /// - `id`: Transform identifier.
@@ -619,12 +502,107 @@ impl Default for TextForgeProcessor {
 impl TextForgeProcessor {
     /// Creates a new empty processor.
     ///
-    /// - No transforms are registered initially.
-    /// - The internal `ErrorManager` is initialized with `Default`.
+    /// No transforms are registered initially.
     pub fn new() -> Self {
         TextForgeProcessor {
             transforms: HashMap::new(),
-            errors: ErrorManager::default(),
+            profile: ExecutionProfile::balanced(),
+        }
+    }
+
+    /// This processor using `profile` (see [`ExecutionProfile`]).
+    pub fn with_profile(mut self, profile: ExecutionProfile) -> Self {
+        self.profile = profile;
+        self
+    }
+
+    /// Use `profile` for later runs. Results never depend on the profile.
+    pub fn set_profile(&mut self, profile: ExecutionProfile) {
+        self.profile = profile;
+    }
+
+    /// The profile in use (`balanced` by default).
+    pub fn profile(&self) -> &ExecutionProfile {
+        &self.profile
+    }
+
+    /// Set the name of a registered pipeline, read by the DSL as
+    /// `__PIPELINE_NAME__`. A pipeline's name defaults to its identifier, or to
+    /// the file name without extension when it was loaded from a file.
+    ///
+    /// ```rust
+    /// use textforge::api::TextForgeBuilderMethods;
+    /// use textforge::api::processor::{TextForgeProcessor, TextForgeProcessorMethods};
+    ///
+    /// let mut processor = TextForgeProcessor::new();
+    /// let id = processor.create_pipeline().add_to_end("@{{__PIPELINE_NAME__}}")?.build()?;
+    /// assert_eq!(processor.pipeline_name(&id)?, id);
+    /// processor.set_pipeline_name(&id, "cleanup")?;
+    /// assert_eq!(processor.pipeline_name(&id)?, "cleanup");
+    /// assert_eq!(processor.process_all(&id, "run")?, "run@cleanup");
+    /// # Ok::<(), textforge::utils::errors::TextForgeError>(())
+    /// ```
+    pub fn set_pipeline_name(
+        &mut self,
+        id: &str,
+        name: impl Into<String>,
+    ) -> Result<(), TextForgeError> {
+        let pipeline = self
+            .transforms
+            .get_mut(id)
+            .ok_or_else(token_array_not_found(id))?;
+        pipeline.statics = Arc::new(StaticContext::new(name.into(), None));
+        Ok(())
+    }
+
+    /// The name of a registered pipeline (see [`Self::set_pipeline_name`]).
+    pub fn pipeline_name(&self, id: &str) -> Result<&str, TextForgeError> {
+        self.transforms
+            .get(id)
+            .map(|pipeline| pipeline.statics.pipeline_name())
+            .ok_or_else(token_array_not_found(id))
+    }
+
+    /// The instructions of pipeline `id` and a fresh execution context for one
+    /// run of it. Borrows only the pipeline table, so callers can still use
+    /// the error manager.
+    fn pipeline_run<'p>(
+        transforms: &'p HashMap<String, RegisteredPipeline>,
+        id: &str,
+        input_file: Option<&Path>,
+        limits: crate::api::Limits,
+    ) -> Result<(&'p [TokenWrapper], GlobalExecutionContext), TextForgeError> {
+        let pipeline = transforms.get(id).ok_or_else(token_array_not_found(id))?;
+        let statics = match input_file {
+            None => Arc::clone(&pipeline.statics),
+            Some(path) => Arc::new(pipeline.statics.with_input_file(path)),
+        };
+        let mut context = GlobalExecutionContext::with_static(statics);
+        context.set_limits(limits);
+        context.set_base_dir(pipeline.base_dir.clone());
+        Ok((&pipeline.tokens, context))
+    }
+
+    /// Make relative paths of the file instructions in pipeline `id` start from
+    /// the directory of `file`, the file it was read from.
+    fn set_base_dir_from_file(&mut self, id: &str, file: &Path) {
+        let directory = file
+            .canonicalize()
+            .ok()
+            .and_then(|file| file.parent().map(Path::to_path_buf))
+            .unwrap_or_else(|| file.parent().map(Path::to_path_buf).unwrap_or_default());
+        if let Some(pipeline) = self.transforms.get_mut(id) {
+            pipeline.base_dir = Some(Arc::from(directory.as_path()));
+        }
+    }
+
+    /// Name a pipeline loaded from `path` after the file name without extension.
+    fn name_after_file(&mut self, id: &str, path: &Path) {
+        if let (Some(stem), Some(pipeline)) = (path.file_stem(), self.transforms.get_mut(id)) {
+            pipeline.statics = Arc::new(StaticContext::new(
+                stem.to_string_lossy().into_owned(),
+                None,
+            ));
         }
     }
 
@@ -663,11 +641,11 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
         let tokens = match self
             .transforms
             .get(id)
+            .map(|pipeline| &pipeline.tokens)
             .ok_or_else(token_array_not_found(id))
         {
             Ok(x) => x,
             Err(e) => {
-                self.errors.add_error(e.clone());
                 return Err(e);
             }
         };
@@ -676,33 +654,69 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
     }
 
     fn get_pipeline_from_file(&mut self, path: &Path) -> Result<String, TextForgeError> {
-        let tokens = match read_from_file(Path::new(path)) {
+        // Joined pipelines (`ppjn`) load now, relative to this file.
+        let tokens = read_from_file(Path::new(path)).and_then(|mut tokens| {
+            let file = path.canonicalize().map_err(|e| {
+                TextForgeError::new(
+                    TextForgeErrorCode::FileNotFound(
+                        format!("cannot open the pipeline file `{}`: {e}", path.display()).into(),
+                    ),
+                    "processor",
+                    path.display().to_string(),
+                )
+            })?;
+            let directory = file.parent().unwrap_or(Path::new("."));
+            crate::parser::joins::link(&mut tokens, directory, std::slice::from_ref(&file))?;
+            Ok(tokens)
+        });
+        let tokens = match tokens {
             Ok(x) => x,
             Err(e) => {
-                self.errors.add_error(e.clone());
                 return Err(e);
             }
         };
 
-        Ok(self.add_transform(tokens))
+        let identifier = self.add_transform(tokens);
+        self.name_after_file(&identifier, path);
+        self.set_base_dir_from_file(&identifier, path);
+        Ok(identifier)
     }
 
     // -- Pipeline registration & inspection ---------------------------
 
     fn add_transform(&mut self, mut tokens: Vec<TokenWrapper>) -> String {
+        // Load joined pipelines (`ppjn`) still unloaded, from the working
+        // directory. This method cannot report errors: a join that fails to
+        // load here is loaded, and reports its error, when it runs.
+        for token in &mut tokens {
+            let _ = crate::parser::joins::link(std::slice::from_mut(token), Path::new("."), &[]);
+        }
         for token in &mut tokens {
             token.prepare_constant();
         }
         let identifier = Uuid::new_v4().to_string();
-        self.transforms.insert(identifier.clone(), tokens);
+        let statics = Arc::new(StaticContext::new(identifier.clone(), None));
+        self.transforms.insert(
+            identifier.clone(),
+            RegisteredPipeline {
+                tokens,
+                statics,
+                base_dir: None,
+            },
+        );
         identifier
     }
 
     fn remove_transform(&mut self, id: &str) -> Result<(), TextForgeError> {
         match self.transforms.remove(id).ok_or_else(|| {
             TextForgeError::new(
-                TextForgeErrorCode::TokenNotFound("Transformation not found".into()),
-                "remove_transform",
+                TextForgeErrorCode::TokenArrayNotFound(
+                    format!(
+                        "cannot remove the pipeline `{id}`: no pipeline is registered with that id"
+                    )
+                    .into(),
+                ),
+                "processor",
                 id.to_string(),
             )
         }) {
@@ -727,12 +741,17 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
             .get(id)
             .ok_or_else(|| {
                 TextForgeError::new(
-                    TextForgeErrorCode::TokenArrayNotFound("Transform not found".into()),
-                    "get_transform_vec".to_string(),
+                    TextForgeErrorCode::TokenArrayNotFound(
+                        format!("no pipeline is registered with the id `{id}`").into(),
+                    ),
+                    "processor",
                     id.to_string(),
                 )
             })?
-            .clone())
+            .tokens
+            .iter()
+            .map(TokenWrapper::without_preparation)
+            .collect())
     }
 
     fn get_text_transform_vec(&self, id: &str) -> Result<Vec<String>, TextForgeError> {
@@ -740,12 +759,14 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
             .get(id)
             .ok_or_else(|| {
                 TextForgeError::new(
-                    TextForgeErrorCode::TokenArrayNotFound("Transform not found".into()),
-                    "get_transform_vec",
+                    TextForgeErrorCode::TokenArrayNotFound(
+                        format!("no pipeline is registered with the id `{id}`").into(),
+                    ),
+                    "processor",
                     id.to_string(),
                 )
             })?
-            .clone()
+            .tokens
             .iter()
             .map(|t| t.to_text_line_unresolved().map(|s| s.to_string()))
             .collect::<Result<Vec<String>, TextForgeError>>()
@@ -758,40 +779,19 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
         id: &str,
         input: Cow<'a, str>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
-        let mut result = input;
-
-        let tokens = self
-            .transforms
-            .get(id)
-            .ok_or_else(token_array_not_found(id))?;
-        let mut context = GlobalExecutionContext::new();
-
-        // ErrorManager local, descartável — não é o self.errors compartilhado
-        let mut local_errors = ErrorManager::default();
-
-        for token in tokens.iter() {
-            if context.is_halted {
-                break;
-            }
-            result = apply_transform(token, result, &mut local_errors, &mut context)?;
-        }
-
-        Ok(result)
+        self.run_transform_from(id, input, None)
     }
 
     #[cfg(feature = "buffered")]
     fn process_all(&mut self, id: &str, input: &str) -> Result<String, TextForgeError> {
-        self.process_all_via_buffer(id, input)
+        self.process_all_via_buffer(id, input, None)
     }
 
     #[cfg(not(feature = "buffered"))]
     fn process_all(&mut self, id: &str, input: &str) -> Result<String, TextForgeError> {
         match self.run_transform(id, Cow::from(input)) {
             Ok(result) => Ok(result.into_owned()),
-            Err(e) => {
-                self.errors.add_error(e.clone());
-                Err(e)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -801,105 +801,21 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
         input: &str,
     ) -> Result<String, TextForgeError> {
         let mut context = GlobalExecutionContext::new();
+        context.set_limits(self.profile.limits);
         match token.apply_token(Cow::from(input), &mut context) {
             Ok(x) => Ok(x.to_string()),
-            Err(e) => {
-                self.errors.add_error(e.clone());
-                Err(e)
-            }
+            Err(e) => Err(e),
         }
     }
 
     #[cfg(feature = "buffered")]
     fn process_all_with_debug(&mut self, id: &str, input: &str) -> Result<String, TextForgeError> {
-        self.process_debug_via_buffer(id, input)
+        self.process_debug_from(id, input, None, &mut std::io::stdout().lock())
     }
 
     #[cfg(not(feature = "buffered"))]
     fn process_all_with_debug(&mut self, id: &str, input: &str) -> Result<String, TextForgeError> {
-        let mut result = Cow::from(input);
-        let dashes = 10;
-
-        let tokens = match self
-            .transforms
-            .get(id)
-            .ok_or_else(token_array_not_found(id))
-        {
-            Ok(x) => x,
-            Err(e) => {
-                self.errors.add_error(e.clone());
-                return Err(e);
-            }
-        };
-
-        let mut log = String::new();
-        log.push_str("PROCESSING STEP BY STEP:\n");
-        log.push_str(&"-".repeat(dashes));
-        log.push_str("\n\n");
-
-        let mut context = GlobalExecutionContext::new();
-
-        for (counter, token) in (0_i64..).zip(tokens.iter()) {
-            if context.is_halted {
-                break;
-            }
-            let bound = token
-                .bind_for_debug(&mut context)
-                .inspect_err(|error| self.errors.add_error(error.clone()))?;
-            let line = bound.to_textforge_line();
-            let red_result = result.red();
-            let temp = bound
-                .transform(result, Some(&mut context))
-                .inspect_err(|error| self.errors.add_error(error.clone()))?;
-
-            if token.get_string_repr() == "blk" {
-                let v = match bound.get_params().first() {
-                    Some(crate::parser::params::TextForgeParamTypes::String(name)) => name,
-                    _ => {
-                        return Err(TextForgeError::new(
-                            TextForgeErrorCode::InvalidParameters(
-                                "Invalid block debug metadata".into(),
-                            ),
-                            "process_all_with_debug",
-                            "block name",
-                        ));
-                    }
-                };
-
-                log.push_str(
-                    &format!(
-                        "Step: [{}] => [{}]\n{}\n\tBlock Instruction: {}\t\tBlock Name: {}\n\t\t\tCurrent instructions Associated to this Block:\n{}",
-                        counter.to_string().blue(),
-                        (counter + 1).to_string().blue(),
-                        "Block Declaration: ".to_string().green(),
-                        line.yellow(),
-                        v.to_string().green(),
-                        context.get_formatted_block_items(v)?
-                    )
-                );
-            } else {
-                // Note: format! aloca, mas agora você faz 1 print no final.
-
-                log.push_str(&format!(
-                    "Step: [{}] => [{}]\nInstruction: {}\nBefore: {}\nAfter: {}\n\n",
-                    counter.to_string().blue(),
-                    (counter + 1).to_string().blue(),
-                    line.yellow(),
-                    red_result,
-                    temp.green()
-                ));
-            }
-
-            if (counter as usize) + 1 < tokens.len() {
-                log.push_str(&"-".repeat(dashes));
-                log.push_str("\n\n");
-            }
-
-            result = temp;
-        }
-
-        print!("{log}"); // 1 única saída
-        Ok(result.to_string())
+        self.process_debug_from(id, input, None, &mut std::io::stdout().lock())
     }
 
     fn process_single_with_debug(
@@ -908,10 +824,11 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
         input: &str,
     ) -> Result<String, TextForgeError> {
         let mut ctx = GlobalExecutionContext::new();
+        ctx.set_limits(self.profile.limits);
+        ctx.enable_trace();
         let output = match token.apply_token(Cow::from(input), &mut ctx) {
             Ok(x) => x,
             Err(e) => {
-                self.errors.add_error(e.clone());
                 return Err(e);
             }
         };
@@ -923,6 +840,12 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
             input.red(),
             output.green()
         );
+        for nested in ctx.take_trace_lines() {
+            println!("{nested}");
+        }
+        if let Some(summary) = ctx.ignored_summary() {
+            print!("{summary}");
+        }
 
         Ok(output.to_string())
     }
@@ -936,27 +859,31 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
         use std::fs::File;
 
         let output_path_str = output_path.to_string_lossy().into_owned();
-        let input = file_io::read_utf8_file(file_path, "processor.process_file")?;
+        let input = file_io::read_utf8_file(file_path, "processor")?;
 
         // Transfer ownership to the whole-document engine instead of cloning input.
         #[cfg(not(feature = "buffered"))]
         let result = self
-            .run_transform(pipeline_id, Cow::Owned(input))
-            .map(Cow::into_owned)
-            .inspect_err(|error| self.errors.add_error(error.clone()))?;
+            .run_transform_from(pipeline_id, Cow::Owned(input), Some(file_path))
+            .map(Cow::into_owned)?;
         #[cfg(feature = "buffered")]
-        let result = self.process_all(pipeline_id, &input)?;
+        let result = self.process_all_via_buffer(pipeline_id, &input, Some(file_path))?;
 
-        // Garante que o diretório de destino exista antes de criar o arquivo de saída,
-        // no mesmo espírito do que process_batch já faz para cada `target`.
+        // Create the output directory first, as process_batch does for each target.
         if let Some(parent) = output_path.parent()
             && !parent.as_os_str().is_empty()
             && !parent.exists()
         {
             std::fs::create_dir_all(parent).map_err(|e| {
                 TextForgeError::new(
-                    TextForgeErrorCode::FileWritingError(Cow::from(e.to_string())),
-                    Cow::from("processor.process_file"),
+                    TextForgeErrorCode::FileWritingError(
+                        format!(
+                            "cannot create the output directory `{}`: {e}",
+                            parent.display()
+                        )
+                        .into(),
+                    ),
+                    Cow::from("processor"),
                     output_path_str.clone(),
                 )
             })?;
@@ -964,16 +891,20 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
 
         let mut out = File::create(output_path).map_err(|e| {
             TextForgeError::new(
-                TextForgeErrorCode::FileOpeningError(Cow::from(e.to_string())),
-                Cow::from("processor.process_file"),
+                TextForgeErrorCode::FileOpeningError(
+                    format!("cannot create the output file `{output_path_str}`: {e}").into(),
+                ),
+                Cow::from("processor"),
                 output_path_str.clone(),
             )
         })?;
 
         out.write_all(result.as_bytes()).map_err(|e| {
             TextForgeError::new(
-                TextForgeErrorCode::FileWritingError(Cow::from(e.to_string())),
-                Cow::from("processor.process_file"),
+                TextForgeErrorCode::FileWritingError(
+                    format!("cannot write the output file `{output_path_str}`: {e}").into(),
+                ),
+                Cow::from("processor"),
                 output_path_str.clone(),
             )
         })?;
@@ -994,22 +925,29 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
                 |(origin, pipeline_id, target)| -> Result<(), TextForgeError> {
                     if !origin.exists() {
                         return Err(TextForgeError::new(
-                            TextForgeErrorCode::FileNotFound("Origin file does not exist".into()),
-                            Cow::Borrowed("process_batch"),
-                            format!("{:?}", origin),
+                            TextForgeErrorCode::FileNotFound(
+                                format!("the input file `{}` does not exist", origin.display())
+                                    .into(),
+                            ),
+                            Cow::Borrowed("processor"),
+                            origin.display().to_string(),
                         ));
                     }
 
                     if !origin.is_file() {
                         return Err(TextForgeError::new(
-                            TextForgeErrorCode::ValidationError("Origin path is not a file".into()),
-                            Cow::Borrowed("process_batch"),
-                            format!("{:?}", origin),
+                            TextForgeErrorCode::ValidationError(
+                                format!("the input path `{}` is not a file", origin.display())
+                                    .into(),
+                            ),
+                            Cow::Borrowed("processor"),
+                            origin.display().to_string(),
                         ));
                     }
 
-                    let input = file_io::read_utf8_file(origin, "process_batch")?;
-                    let output = self.run_transform(pipeline_id, Cow::Owned(input))?;
+                    let input = file_io::read_utf8_file(origin, "processor")?;
+                    let output =
+                        self.run_transform_from(pipeline_id, Cow::Owned(input), Some(origin))?;
 
                     if let Some(parent) = target.parent()
                         && !parent.as_os_str().is_empty()
@@ -1018,10 +956,14 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
                         std::fs::create_dir_all(parent).map_err(|e| {
                             TextForgeError::new(
                                 TextForgeErrorCode::FileWritingError(
-                                    "Failed to create target directory".into(),
+                                    format!(
+                                        "cannot create the output directory `{}`: {e}",
+                                        parent.display()
+                                    )
+                                    .into(),
                                 ),
-                                Cow::Borrowed("process_batch"),
-                                format!("{:?} - {}", parent, e),
+                                Cow::Borrowed("processor"),
+                                target.display().to_string(),
                             )
                         })?;
                     }
@@ -1029,10 +971,11 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
                     std::fs::write(target, output.as_bytes()).map_err(|e| {
                         TextForgeError::new(
                             TextForgeErrorCode::FileWritingError(
-                                "Failed to write target file".into(),
+                                format!("cannot write the output file `{}`: {e}", target.display())
+                                    .into(),
                             ),
-                            Cow::Borrowed("process_batch"),
-                            format!("{:?} - {}", target, e),
+                            Cow::Borrowed("processor"),
+                            target.display().to_string(),
                         )
                     })?;
 
@@ -1049,7 +992,7 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
         watcher_list: &mut WatcherList,
         report_path: &Path,
     ) -> Result<String, TextForgeError> {
-        self.process_watchers_via_buffer(id, input, watcher_list, report_path)
+        self.process_watchers_via_buffer(id, input, None, watcher_list, report_path)
     }
 
     #[cfg(all(feature = "watchers", not(feature = "buffered")))]
@@ -1060,74 +1003,7 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
         watcher_list: &mut WatcherList,
         report_path: &Path,
     ) -> Result<String, TextForgeError> {
-        let tokens = match self
-            .transforms
-            .get(id)
-            .ok_or_else(token_array_not_found(id))
-        {
-            Ok(x) => x,
-            Err(e) => {
-                self.errors.add_error(e.clone());
-                return Err(e);
-            }
-        };
-
-        let mut context = GlobalExecutionContext::new();
-        let mut local_errors = ErrorManager::default();
-
-        // Estado do pipeline como Arc<str>, não String: reusar `current_arc` de
-        // uma iteração como `before` da próxima é um Arc::clone (refcount bump),
-        // não uma cópia de texto. apply_transform ainda recebe &str normalmente
-        // (Arc<str> faz Deref<Target = str>, então &current_arc já serve).
-        let mut current_arc: Arc<str> = Arc::from(input);
-
-        // Guarda (before, current, instruction) do passo anterior até sabermos
-        // o "after" dele — que só existe depois de rodar o passo seguinte.
-        let mut pending: Option<(Arc<str>, Arc<str>, String)> = None;
-
-        for token in tokens.iter() {
-            let before_arc = Arc::clone(&current_arc); // O(1)
-
-            let after = apply_transform(
-                token,
-                Cow::Borrowed(current_arc.as_ref()),
-                &mut local_errors,
-                &mut context,
-            )?;
-
-            // Única cópia de texto inteiro por passo: a saída do transform
-            // (String nova, alocada pelo apply_transform em si — isso é
-            // inerante ao trabalho da instrução) também precisa existir como
-            // Arc<str> pra virar "current" deste passo / "before" do próximo.
-            current_arc = Arc::from(after.as_ref());
-
-            if let Some((prev_before, prev_current, prev_instruction)) = pending.take() {
-                let watcher_ctx = WatcherContext::new(
-                    prev_current,
-                    prev_before,
-                    Some(Arc::clone(&current_arc)), // O(1)
-                    prev_instruction,
-                );
-                watcher_list.run_watchers(watcher_ctx)?;
-            }
-
-            pending = Some((
-                before_arc,
-                Arc::clone(&current_arc), // O(1)
-                token.to_textforge_line().to_string(),
-            ));
-        }
-
-        // Última instrução: não existe próximo passo — after = None, explícito.
-        if let Some((before, current, instruction)) = pending.take() {
-            let watcher_ctx = WatcherContext::new(current, before, None::<Arc<str>>, instruction);
-            watcher_list.run_watchers(watcher_ctx)?;
-        }
-
-        watcher_list.to_json(report_path)?;
-        watcher_list.reset();
-
-        Ok(current_arc.to_string())
+        self.process_watchers_from(id, input, None, watcher_list, report_path)
     }
 
     // -- Bytecode persistence (feature = "bytecode") --------------------
@@ -1139,11 +1015,11 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
         let tokens = match self
             .transforms
             .get(id)
+            .map(|pipeline| &pipeline.tokens)
             .ok_or_else(token_array_not_found(id))
         {
             Ok(x) => x,
             Err(e) => {
-                self.errors.add_error(e.clone());
                 return Err(e);
             }
         };
@@ -1156,13 +1032,346 @@ impl TextForgeProcessorMethods for TextForgeProcessor {
         let tokens = match read_bytecode_from_file(path) {
             Ok(x) => x,
             Err(e) => {
-                self.errors.add_error(e.clone());
                 return Err(e);
             }
         };
 
         let identifier = self.add_transform(tokens.to_vec());
+        self.name_after_file(&identifier, path);
+        self.set_base_dir_from_file(&identifier, path);
 
         Ok(identifier)
+    }
+}
+
+#[cfg(all(feature = "watchers", feature = "buffered", feature = "cli"))]
+impl TextForgeProcessor {
+    /// [`TextForgeProcessorMethods::process_all_with_watchers`] for a document
+    /// read from `input_file` (exposed to the DSL as `__INPUT_FILE__`).
+    pub(crate) fn process_watchers_from(
+        &mut self,
+        id: &str,
+        input: &str,
+        input_file: Option<&Path>,
+        watcher_list: &mut WatcherList,
+        report_path: &Path,
+    ) -> Result<String, TextForgeError> {
+        self.process_watchers_via_buffer(id, input, input_file, watcher_list, report_path)
+    }
+}
+
+#[cfg(feature = "cli")]
+impl TextForgeProcessor {
+    /// Make every run of pipeline `id` see `input_file` (`__INPUT_FILE__`) until
+    /// [`restore_statics`](Self::restore_statics) puts back the returned
+    /// context. `txf` runs a pipeline once per line or chunk; building the
+    /// context once instead of in every run (as passing the file to each run
+    /// does) keeps line mode as fast as without an input file.
+    pub(crate) fn statics_for_input(
+        &mut self,
+        id: &str,
+        input_file: &Path,
+    ) -> Option<Arc<StaticContext>> {
+        let pipeline = self.transforms.get_mut(id)?;
+        let with_file = Arc::new(pipeline.statics.with_input_file(input_file));
+        Some(std::mem::replace(&mut pipeline.statics, with_file))
+    }
+
+    /// Put back the context [`statics_for_input`](Self::statics_for_input)
+    /// returned.
+    pub(crate) fn restore_statics(&mut self, id: &str, previous: Arc<StaticContext>) {
+        if let Some(pipeline) = self.transforms.get_mut(id) {
+            pipeline.statics = previous;
+        }
+    }
+}
+
+impl TextForgeProcessor {
+    /// [`TextForgeProcessorMethods::process_all`] for a document read from
+    /// `input_file` (exposed to the DSL as `__INPUT_FILE__`). Takes the input
+    /// by value so the whole-document engine can work on it without a copy.
+    #[cfg(feature = "cli")]
+    pub(crate) fn process_text_from(
+        &mut self,
+        id: &str,
+        input: Cow<'_, str>,
+        input_file: Option<&Path>,
+    ) -> Result<String, TextForgeError> {
+        #[cfg(feature = "buffered")]
+        {
+            self.process_all_via_buffer(id, &input, input_file)
+        }
+        #[cfg(not(feature = "buffered"))]
+        {
+            self.run_transform_from(id, input, input_file)
+                .map(Cow::into_owned)
+        }
+    }
+
+    /// [`TextForgeProcessorMethods::process_all_with_debug`] for a document read
+    /// from `input_file`, writing the trace to `log` instead of standard output.
+    /// Nothing is written when the pipeline fails.
+    pub(crate) fn process_debug_from(
+        &mut self,
+        id: &str,
+        input: &str,
+        input_file: Option<&Path>,
+        log: &mut (dyn Write + '_),
+    ) -> Result<String, TextForgeError> {
+        let log_error = |error: std::io::Error| {
+            TextForgeError::new(
+                TextForgeErrorCode::FileWritingError(
+                    format!("cannot write the debug log: {error}").into(),
+                ),
+                "processor",
+                "",
+            )
+        };
+        #[cfg(feature = "buffered")]
+        let result = self.process_debug_via_buffer(id, input, input_file, log)?;
+        #[cfg(not(feature = "buffered"))]
+        let result = {
+            let (result, text) = self.debug_log(id, input, input_file)?;
+            // A single write.
+            log.write_all(text.as_bytes()).map_err(log_error)?;
+            result
+        };
+        // Without steps the trace would end at its heading, with no `After:`
+        // holding the final text.
+        if self
+            .transforms
+            .get(id)
+            .is_some_and(|pipeline| pipeline.tokens.is_empty())
+        {
+            log.write_all(b"The pipeline has no instructions: the text is unchanged.\n")
+                .map_err(log_error)?;
+        }
+        Ok(result)
+    }
+
+    /// [`TextForgeProcessorMethods::run_transform`] for a document read from
+    /// `input_file` (exposed to the DSL as `__INPUT_FILE__`).
+    fn run_transform_from<'a>(
+        &self,
+        id: &str,
+        input: Cow<'a, str>,
+        input_file: Option<&Path>,
+    ) -> Result<Cow<'a, str>, TextForgeError> {
+        let (tokens, mut context) =
+            Self::pipeline_run(&self.transforms, id, input_file, self.profile.limits)?;
+
+        run_tokens(
+            tokens,
+            input,
+            &mut context,
+            |_, token, document, context| token.apply_token(document, context),
+        )
+    }
+}
+
+#[cfg(all(feature = "watchers", not(feature = "buffered")))]
+impl TextForgeProcessor {
+    /// [`TextForgeProcessorMethods::process_all_with_watchers`] for a document
+    /// read from `input_file` (exposed to the DSL as `__INPUT_FILE__`).
+    pub(crate) fn process_watchers_from(
+        &mut self,
+        id: &str,
+        input: &str,
+        input_file: Option<&Path>,
+        watcher_list: &mut WatcherList,
+        report_path: &Path,
+    ) -> Result<String, TextForgeError> {
+        let (tokens, mut context) =
+            match Self::pipeline_run(&self.transforms, id, input_file, self.profile.limits) {
+                Ok(x) => x,
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+        // The pipeline state is an Arc<str>, not a String: reusing `current_arc` from
+        // one step as the `before` of the next is an Arc::clone (a refcount bump),
+        // not a text copy. apply_token still takes a &str
+        // (Arc<str> derefs to str, so &current_arc works).
+        let current_arc: Arc<str> = Arc::from(input);
+
+        // Holds (before, current, instruction) of the previous step until its
+        // "after" is known, which happens only after the next step runs.
+        let mut pending: Option<(Arc<str>, Arc<str>, String)> = None;
+
+        let current_arc = run_tokens(
+            tokens,
+            current_arc,
+            &mut context,
+            |_, token, current_arc, context| {
+                let before_arc = Arc::clone(&current_arc); // O(1)
+
+                let after = token.apply_token(Cow::Borrowed(current_arc.as_ref()), context)?;
+
+                // The only whole-text copy per step: the transform's output
+                // (a new String, allocated by the instruction itself, which is
+                // inherent to the instruction's work) must also exist as an
+                // Arc<str> to become this step's "current" and the next step's "before".
+                let current_arc: Arc<str> = Arc::from(after.as_ref());
+
+                if let Some((prev_before, prev_current, prev_instruction)) = pending.take() {
+                    let watcher_ctx = WatcherContext::new(
+                        prev_current,
+                        prev_before,
+                        Some(Arc::clone(&current_arc)), // O(1)
+                        prev_instruction,
+                    );
+                    watcher_list.run_watchers(watcher_ctx)?;
+                }
+
+                pending = Some((
+                    before_arc,
+                    Arc::clone(&current_arc), // O(1)
+                    token.to_textforge_line().to_string(),
+                ));
+                Ok(current_arc)
+            },
+        )?;
+
+        // Last instruction: there is no next step, so after = None.
+        if let Some((before, current, instruction)) = pending.take() {
+            let watcher_ctx = WatcherContext::new(current, before, None::<Arc<str>>, instruction);
+            watcher_list.run_watchers(watcher_ctx)?;
+        }
+
+        watcher_list.to_json(report_path)?;
+        watcher_list.reset();
+
+        Ok(current_arc.to_string())
+    }
+}
+
+#[cfg(not(feature = "buffered"))]
+impl TextForgeProcessor {
+    /// Run `id` with debug output and return `(result, log)`; nested steps of
+    /// `cblk`, `iter`, `on*` and `rmape` follow each top-level step.
+    fn debug_log(
+        &mut self,
+        id: &str,
+        input: &str,
+        input_file: Option<&Path>,
+    ) -> Result<(String, String), TextForgeError> {
+        let dashes = 10;
+
+        let (tokens, mut context) =
+            match Self::pipeline_run(&self.transforms, id, input_file, self.profile.limits) {
+                Ok(x) => x,
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+
+        let mut log = String::new();
+        log.push_str("PROCESSING STEP BY STEP:\n");
+        log.push_str(&"-".repeat(dashes));
+        log.push_str("\n\n");
+        context.enable_trace();
+
+        let result = run_tokens(
+            tokens,
+            Cow::from(input),
+            &mut context,
+            |index, token, result, context| {
+                let counter = index as i64;
+                let bound = token
+                    .bind_for_debug(context, crate::context::builtins::CurrentText::Str(&result))?;
+                let line = bound.to_textforge_line();
+                let red_result = result.red();
+                let temp = bound
+                    .transform(result, Some(context))
+                    .map_err(|error| token.locate_bound(error, bound.as_ref()))?;
+
+                if token.get_string_repr() == "blk" {
+                    let v = match bound.get_params().first() {
+                        Some(crate::parser::params::TextForgeParamTypes::String(name)) => name,
+                        _ => {
+                            return Err(TextForgeError::new(
+                                TextForgeErrorCode::InvalidParameters(
+                                    "internal error: a `blk` instruction has no block name".into(),
+                                ),
+                                "blk",
+                                "",
+                            ));
+                        }
+                    };
+
+                    log.push_str(
+                        &format!(
+                            "Step: [{}] => [{}]\n{}\n\tBlock Instruction: {}\t\tBlock Name: {}\n\t\t\tCurrent instructions Associated to this Block:\n{}",
+                            counter.to_string().blue(),
+                            (counter + 1).to_string().blue(),
+                            "Block Declaration: ".to_string().green(),
+                            line.yellow(),
+                            v.to_string().green(),
+                            context.get_formatted_block_items(v)?
+                        )
+                    );
+                } else {
+                    log.push_str(&format!(
+                        "Step: [{}] => [{}]\nInstruction: {}\nBefore: {}\nAfter: {}\n\n",
+                        counter.to_string().blue(),
+                        (counter + 1).to_string().blue(),
+                        line.yellow(),
+                        red_result,
+                        temp.green()
+                    ));
+                }
+
+                let nested = context.take_trace_lines();
+                for line in &nested {
+                    log.push_str(line);
+                    log.push('\n');
+                }
+                if !nested.is_empty() {
+                    log.push('\n');
+                }
+
+                if index + 1 < tokens.len() {
+                    log.push_str(&"-".repeat(dashes));
+                    log.push_str("\n\n");
+                }
+
+                Ok(temp)
+            },
+        )?;
+        if let Some(summary) = context.ignored_summary() {
+            log.push_str(&"-".repeat(dashes));
+            log.push_str("\n\n");
+            log.push_str(&summary);
+        }
+
+        Ok((result.into_owned(), log))
+    }
+}
+
+#[cfg(all(test, not(feature = "buffered")))]
+mod debug_tests {
+    use super::*;
+    use crate::context::debug_trace::fixtures::{NESTED_DEBUG_PIPELINE, NESTED_DEBUG_TRACE};
+
+    #[test]
+    fn unbuffered_debug_traces_nested_steps_like_buffered_debug() {
+        let mut processor = TextForgeProcessor::new();
+        let tokens = NESTED_DEBUG_PIPELINE
+            .lines()
+            .map(|line| crate::text::reader::read_from_text(line).unwrap())
+            .collect();
+        let id = processor.add_transform(tokens);
+        let input = "  cat   wolf  \nx";
+        let (output, log) = processor.debug_log(&id, input, None).unwrap();
+        assert_eq!(output, processor.process_all(&id, input).unwrap());
+        let ansi = regex::Regex::new("\x1b\\[[0-9;]*m").unwrap();
+        let log = ansi.replace_all(&log, "");
+        let mut rest: &str = &log;
+        for expected in NESTED_DEBUG_TRACE {
+            let at = rest
+                .find(expected)
+                .unwrap_or_else(|| panic!("missing {expected:?} in {log}"));
+            rest = &rest[at + expected.len()..];
+        }
     }
 }

@@ -1,18 +1,19 @@
 use std::borrow::Cow;
 
 use crate::{
-    context::execution_context::{GlobalContextMethods, GlobalExecutionContext},
+    context::{
+        debug_trace::{plural, within},
+        execution_context::GlobalExecutionContext,
+    },
     parse_args,
     parser::params::TextForgeParamTypes,
     tokens::InstructionMethods,
-    utils::{
-        errors::{TextForgeError, TextForgeErrorCode::RequiredContextError},
-        validations::check_vec_len,
-    },
+    utils::{apply::run_tokens, errors::TextForgeError, validations::check_vec_len},
 };
 
 #[cfg(feature = "test_access")]
 pub mod test;
+/// `cblk {name};` — Run the instructions of block `name`.
 #[derive(Clone)]
 pub struct Cblk {
     block_name: String,
@@ -36,6 +37,10 @@ impl InstructionMethods for Cblk {
     fn get_opcode(&self) -> u32 {
         0x35
     }
+    // Bound state is immutable; only the execution context changes.
+    fn supports_preparation(&self) -> bool {
+        true
+    }
     fn get_string_repr(&self) -> &'static str {
         "cblk"
     }
@@ -50,20 +55,44 @@ impl InstructionMethods for Cblk {
         context: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
         let context = context.ok_or_else(|| {
-            TextForgeError::new(
-                RequiredContextError("Context required for proper working!".into()),
-                std::borrow::Cow::Borrowed("val"),
-                std::borrow::Cow::Borrowed(""),
-            )
+            crate::utils::errors::context_required("cblk", "find the block it runs")
         })?;
-        let mut result = input;
-        let tokens = context.take_block(&self.block_name)?;
+        let tokens = context.take_shared_block(&self.block_name)?;
+        let result = within(
+            context,
+            |_| {
+                format!(
+                    "cblk {}  ({} {})",
+                    self.block_name,
+                    tokens.len(),
+                    plural(tokens.len(), "instruction")
+                )
+            },
+            &self.block_name,
+            input,
+            |result, context| {
+                // Same halting rule as the root: nothing in the block runs
+                // after `end`.
+                run_tokens(&tokens, result, context, |index, token, result, context| {
+                    token.apply_nested(result, context).map_err(|error| {
+                        error.with_note(|| {
+                            format!(
+                                "block `{}`, step {} of {}",
+                                self.block_name,
+                                index + 1,
+                                tokens.len()
+                            )
+                        })
+                    })
+                })
+            },
+        )?;
+        // `end` inside a block ends that block only: the instruction after
+        // `cblk` runs. Before 0.3.2 it stopped the whole pipeline.
+        context.is_halted = false;
 
-        for token in tokens.iter() {
-            result = token.apply_token(result, context)?;
-        }
-
-        context.put_block(&self.block_name, tokens);
+        // On error the block stays taken, as before (see the cblk tests).
+        context.put_shared_block(&self.block_name, tokens);
         Ok(result)
     }
 
@@ -71,14 +100,9 @@ impl InstructionMethods for Cblk {
         &mut self,
         params: &[crate::parser::params::TextForgeParamTypes],
     ) -> Result<(), crate::utils::errors::TextForgeError> {
-        check_vec_len(
-            params,
-            1,
-            "call block",
-            "param parsing error, invalid vec len",
-        )?;
+        check_vec_len(params, 1, "cblk", "")?;
 
-        self.block_name = parse_args!(params, 0, String, "Block name should be of string type");
+        self.block_name = parse_args!(params, 0, String, "block name");
         self.params = vec![self.block_name.to_string().into()];
         Ok(())
     }

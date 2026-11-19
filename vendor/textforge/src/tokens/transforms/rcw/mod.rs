@@ -6,13 +6,13 @@ use std::borrow::Cow;
 use regex::Regex;
 
 use crate::context::execution_context::GlobalExecutionContext;
-use crate::utils::errors::{TextForgeError, TextForgeErrorCode};
+use crate::utils::errors::TextForgeError;
 
 use crate::parser::params::TextForgeParamTypes;
 use crate::tokens::InstructionMethods;
 use crate::utils::validations::check_vec_len;
 
-/// RCW - Replace Count With
+/// `rcw {pattern} {text} {count};` — Replace the first `count` matches.
 ///
 /// Replace `count` ocurrences of `pattern` in `input` with `text_to_replace`
 ///
@@ -35,13 +35,21 @@ use crate::utils::validations::check_vec_len;
 ///
 #[derive(Clone, Debug)]
 pub struct Rcw {
+    /// The regular expression to match.
     pub pattern: Regex,
+    /// How many matches to replace.
     pub count: usize,
+    /// The replacement text: a regex replacement template, where `$1` and
+    /// `${name}` insert capture groups and `$$` is a literal `$` (so a price
+    /// is written `$$5.00`; `$5.00` would insert group 5).
     pub text_to_replace: String,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Rcw {
+    /// Builds `rcw {pattern} {text} {count};` with the given parameters.
+    ///
+    /// Fails with the regex error message if `pattern` is not a valid regular expression.
     pub fn new(pattern: &str, text_to_replace: &str, count: usize) -> Result<Self, String> {
         let pattern = Regex::new(pattern).map_err(|x| x.to_string())?;
         Ok(Rcw {
@@ -60,7 +68,7 @@ impl Rcw {
 impl Default for Rcw {
     fn default() -> Self {
         Rcw {
-            pattern: Regex::new("").unwrap(),
+            pattern: crate::utils::regexes::EMPTY_RE.clone(),
             text_to_replace: "".to_string(),
             count: 0_usize,
             params: vec!["".to_string().into(), "".to_string().into(), (0).into()],
@@ -120,24 +128,14 @@ impl InstructionMethods for Rcw {
 
         check_vec_len(params, 3, "rcw", "")?;
 
-        let pattern_payload = parse_args!(params, 0, String, "Pattern should be of string type");
+        let pattern_payload = parse_args!(params, 0, String, "pattern");
 
-        self.pattern = Regex::new(&pattern_payload).map_err(|_| {
-            TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Failed to create regex".into()),
-                "sslt",
-                pattern_payload.clone(),
-            )
-        })?;
+        self.pattern = Regex::new(&pattern_payload)
+            .map_err(|error| crate::utils::errors::regex_error("rcw", &pattern_payload, error))?;
 
-        self.text_to_replace = parse_args!(
-            params,
-            1,
-            String,
-            "Text_to_replace should be of type String"
-        );
+        self.text_to_replace = parse_args!(params, 1, String, "replacement");
 
-        self.count = parse_args!(params, 2, Usize, "Index should be of type Usize");
+        self.count = parse_args!(params, 2, Usize, "count");
         self.params = vec![
             self.pattern.to_string().into(),
             self.text_to_replace.to_string().into(),

@@ -18,21 +18,15 @@ use std::io::{Read, Write};
 /// ```
 #[derive(Clone, Debug)]
 pub struct BufferOptions {
+    /// Size, in bytes, above which the buffer is kept on disk.
     pub memory_threshold: u64,
+    /// Directory for spool files.
     pub spill_directory: FilePath,
 }
 impl BufferOptions {
     pub(super) fn core(&self) -> Result<TextBufferOptions, BindingError> {
-        let threshold = native_size(self.memory_threshold, "BufferOptions")?;
-        std::fs::create_dir_all(self.spill_directory.as_path()).map_err(|error| {
-            execution(TextForgeError::new(
-                TextForgeErrorCode::FileOpeningError(error.to_string().into()),
-                "BufferOptions.spill_directory",
-                self.spill_directory.as_path().display().to_string(),
-            ))
-        })?;
         Ok(TextBufferOptions::new(
-            threshold,
+            native_size(self.memory_threshold, "BufferOptions")?,
             self.spill_directory.0.clone(),
         ))
     }
@@ -49,7 +43,9 @@ impl BufferOptions {
 /// ```
 #[derive(Clone, Debug)]
 pub struct BufferTask {
+    /// Registered pipeline to run.
     pub pipeline_id: String,
+    /// File to read.
     pub input: FilePath,
 }
 
@@ -64,6 +60,7 @@ pub struct BufferTask {
 /// # }
 /// ```
 pub trait StreamReader {
+    /// Returns at most `maximum` bytes; an empty vector ends the stream.
     fn read(&mut self, maximum: u64) -> Result<Vec<u8>, String>;
 }
 impl<F: FnMut(u64) -> Result<Vec<u8>, String>> StreamReader for F {
@@ -83,6 +80,7 @@ impl<F: FnMut(u64) -> Result<Vec<u8>, String>> StreamReader for F {
 /// # }
 /// ```
 pub trait StreamWriter {
+    /// Writes `bytes`; returns how many were written.
     fn write(&mut self, bytes: Vec<u8>) -> Result<u64, String>;
 }
 impl<F: FnMut(Vec<u8>) -> Result<u64, String>> StreamWriter for F {
@@ -109,16 +107,19 @@ pub struct PortableBuffer {
     core: TextBuffer,
 }
 impl PortableBuffer {
+    /// A buffer holding `text`.
     pub fn from_text(text: &str, options: BufferOptions) -> Result<Self, BindingError> {
         TextBuffer::from_text(text, options.core()?)
             .map(|core| Self { core })
             .map_err(execution)
     }
+    /// A buffer holding the contents of a UTF-8 file.
     pub fn from_file(path: &FilePath, options: BufferOptions) -> Result<Self, BindingError> {
         TextBuffer::from_file(path.as_path(), options.core()?)
             .map(|core| Self { core })
             .map_err(execution)
     }
+    /// A buffer filled from a stream (UTF-8 is validated).
     pub fn from_reader(
         reader: Box<dyn StreamReader>,
         options: BufferOptions,
@@ -127,18 +128,23 @@ impl PortableBuffer {
             .map(|core| Self { core })
             .map_err(execution)
     }
+    /// Size in bytes.
     pub fn len_bytes(&self) -> u64 {
         self.core.len_bytes()
     }
+    /// Whether the buffer is empty.
     pub fn is_empty(&self) -> bool {
         self.core.is_empty()
     }
+    /// Whether the contents are on disk.
     pub fn is_spilled(&self) -> bool {
         self.core.is_spilled()
     }
+    /// Moves the contents to disk.
     pub fn spill(&mut self) -> Result<(), BindingError> {
         self.core.spill().map_err(execution)
     }
+    /// At most `maximum` bytes starting at `offset`.
     pub fn read_at(&mut self, offset: u64, maximum: u64) -> Result<Vec<u8>, BindingError> {
         let count = maximum.min(self.len_bytes().saturating_sub(offset));
         let mut bytes = Vec::new();
@@ -146,9 +152,12 @@ impl PortableBuffer {
             .try_reserve_exact(native_size(count, "PortableBuffer.read_at")?)
             .map_err(|error| {
                 execution(TextForgeError::new(
-                    TextForgeErrorCode::GenericError(error.to_string().into()),
-                    "PortableBuffer.read_at",
-                    "allocation",
+                    TextForgeErrorCode::GenericError(
+                        format!("not enough memory to read {count} bytes from the buffer: {error}")
+                            .into(),
+                    ),
+                    "",
+                    "",
                 ))
             })?;
         bytes.resize(native_size(count, "PortableBuffer.read_at")?, 0);
@@ -156,30 +165,31 @@ impl PortableBuffer {
         bytes.truncate(read);
         Ok(bytes)
     }
+    /// Copies the contents to `writer`; returns the bytes written.
     pub fn copy_to(&mut self, writer: Box<dyn StreamWriter>) -> Result<u64, BindingError> {
         self.core.copy_to(WriterBridge(writer)).map_err(execution)
     }
+    /// Writes the contents to a file; returns the bytes written.
     pub fn write_to_file(&mut self, path: &FilePath) -> Result<u64, BindingError> {
-        crate::utils::validations::prepare_output_path(
-            path.as_path(),
-            "PortableBuffer.write_to_file",
-        )
-        .map_err(execution)?;
         let file = std::fs::File::create(path.as_path()).map_err(|error| {
             execution(TextForgeError::new(
-                TextForgeErrorCode::FileOpeningError(error.to_string().into()),
-                "PortableBuffer.write_to_file",
+                TextForgeErrorCode::FileOpeningError(
+                    format!("cannot create `{}`: {error}", path.as_path().display()).into(),
+                ),
+                "",
                 path.as_path().display().to_string(),
             ))
         })?;
         self.core.copy_to(file).map_err(execution)
     }
+    /// The contents as a `String` (loads a spilled buffer into memory).
     pub fn into_string(self) -> Result<String, BindingError> {
         self.core.into_string().map_err(execution)
     }
 }
 
 impl PortableProcessor {
+    /// Runs a pipeline on a buffer; the result may stay on disk.
     pub fn process_all_buffered(
         &mut self,
         id: &str,
@@ -190,6 +200,7 @@ impl PortableProcessor {
             .map(|core| PortableBuffer { core })
             .map_err(execution)
     }
+    /// Runs one instruction on a buffer.
     pub fn process_single_buffered(
         &mut self,
         instruction: &str,
@@ -200,6 +211,7 @@ impl PortableProcessor {
             .map(|core| PortableBuffer { core })
             .map_err(execution)
     }
+    /// Runs a pipeline on a file without loading it all into memory.
     pub fn process_file_buffered(
         &mut self,
         id: &str,
@@ -211,6 +223,7 @@ impl PortableProcessor {
             .map(|core| PortableBuffer { core })
             .map_err(execution)
     }
+    /// Runs each task in parallel; results are buffers, in task order.
     pub fn process_batch_buffered(
         &self,
         tasks: Vec<BufferTask>,

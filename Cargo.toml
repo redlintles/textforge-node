@@ -10,7 +10,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-textforge = { path = "vendor/textforge", version = "=0.2.0", features = ["bytecode", "watchers", "buffered"] }
+textforge = { path = "vendor/textforge", version = "=0.4.0", features = ["bytecode", "watchers", "buffered"] }
 napi = { version = "3", features = ["napi8"] }
 napi-derive = "3"
 

@@ -1,3 +1,6 @@
+//! [`TextForgeBuilder`]: collects instructions in Rust and registers them as a
+//! pipeline. The instruction methods come from
+//! [`TextForgeBuilderMethods`].
 use crate::{
     api::{TextForgeBlockMethods, TextForgeBuilderMethods, TextForgeConditionalMethods},
     parser::resolve_var::TokenWrapper,
@@ -26,6 +29,8 @@ pub struct TextForgeBuilder<'ap> {
 }
 
 impl<'ap> TextForgeBuilder<'ap> {
+    /// A builder that registers its pipeline in `processor`; usually obtained with
+    /// [`TextForgeProcessor::create_pipeline`].
     pub fn new(processor: &'ap mut TextForgeProcessor) -> TextForgeBuilder<'ap> {
         TextForgeBuilder {
             nodes: Vec::new(),
@@ -37,7 +42,9 @@ impl<'ap> TextForgeBuilder<'ap> {
     /// On failure, the processor and the construction tree remain unchanged.
     /// Successful builds retain the tree and may be repeated.
     pub fn build(&mut self) -> Result<String, TextForgeError> {
-        let tokens = validate_and_lower(&self.nodes)?;
+        let mut tokens = validate_and_lower(&self.nodes)?;
+        // Joined pipelines (`ppjn`) load now, relative to the working directory.
+        crate::parser::joins::link(&mut tokens, std::path::Path::new("."), &[])?;
         Ok(self.processor.add_transform(tokens))
     }
 }

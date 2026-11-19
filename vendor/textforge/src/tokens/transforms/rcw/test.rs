@@ -87,7 +87,7 @@ mod tests {
     }
 
     // ============================
-    // Bytecode-only tests (separados)
+    // Bytecode-only tests
     // ============================
     #[cfg(feature = "bytecode")]
     mod bytecode_tests {
@@ -138,7 +138,7 @@ mod tests {
             let mut t = Rcw::default();
 
             let params = vec![
-                TextForgeParamTypes::Usize(7), // deveria ser String (pattern)
+                TextForgeParamTypes::Usize(7), // should be String (pattern)
                 TextForgeParamTypes::String("b".to_string()),
                 TextForgeParamTypes::Usize(3),
             ];
@@ -146,7 +146,9 @@ mod tests {
             let got = t.set_params(&params);
 
             let expected = Err(crate::utils::errors::TextForgeError::new(
-                TextForgeErrorCode::InvalidParameters("Pattern should be of string type".into()),
+                TextForgeErrorCode::InvalidParameters(
+                    "parameter 1 (`pattern`) must be text, but it is a number".into(),
+                ),
                 "",
                 "",
             ));
@@ -167,8 +169,10 @@ mod tests {
             let got = t.set_params(&params);
 
             let expected = Err(crate::utils::errors::TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Failed to create regex".into()),
-                "sslt",
+                TextForgeErrorCode::TextParsingError(
+                    "`(` is not a valid regular expression".into(),
+                ),
+                "rcw",
                 "(".to_string(),
             ));
 

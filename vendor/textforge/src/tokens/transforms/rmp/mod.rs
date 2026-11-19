@@ -7,16 +7,13 @@ use crate::{
     parse_args,
     parser::params::TextForgeParamTypes,
     tokens::InstructionMethods,
-    utils::{
-        errors::{TextForgeError, TextForgeErrorCode},
-        validations::check_vec_len,
-    },
+    utils::{errors::TextForgeError, validations::check_vec_len},
 };
 
 #[cfg(feature = "test_access")]
 pub mod test;
 
-/// Rmp - Does nothing
+/// `rmp {pattern};` — Remove every match of `pattern`.
 #[derive(Clone, Debug)]
 pub struct Rmp {
     pattern: Regex,
@@ -24,6 +21,9 @@ pub struct Rmp {
 }
 
 impl Rmp {
+    /// Builds `rmp {pattern};` with the given parameters.
+    ///
+    /// Fails with the regex error message if `pattern` is not a valid regular expression.
     pub fn new(pattern: &str) -> Result<Self, String> {
         let pattern = Regex::new(pattern).map_err(|x| x.to_string())?;
         Ok(Rmp {
@@ -36,7 +36,7 @@ impl Rmp {
 impl Default for Rmp {
     fn default() -> Self {
         Rmp {
-            pattern: Regex::new("").unwrap(),
+            pattern: crate::utils::regexes::EMPTY_RE.clone(),
             params: vec!["".to_string().into(), "".to_string().into()],
         }
     }
@@ -79,16 +79,11 @@ impl InstructionMethods for Rmp {
     }
 
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 1, "rmp", "param parsing error, invalid vec len")?;
-        let pattern_payload = parse_args!(params, 0, String, "Pattern should be of string type");
+        check_vec_len(params, 1, "rmp", "")?;
+        let pattern_payload = parse_args!(params, 0, String, "pattern");
 
-        self.pattern = Regex::new(&pattern_payload).map_err(|_| {
-            TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Failed to create regex".into()),
-                "sslt",
-                pattern_payload.clone(),
-            )
-        })?;
+        self.pattern = Regex::new(&pattern_payload)
+            .map_err(|error| crate::utils::errors::regex_error("rmp", &pattern_payload, error))?;
 
         self.params = vec![self.pattern.to_string().into()];
         Ok(())
@@ -96,7 +91,10 @@ impl InstructionMethods for Rmp {
     #[cfg(feature = "bytecode")]
     fn to_bytecode(&self) -> Result<Vec<u8>, TextForgeError> {
         use crate::to_bytecode;
-        let result = to_bytecode!(self.get_opcode(), []);
+        let result = to_bytecode!(
+            self.get_opcode(),
+            [TextForgeParamTypes::String(self.pattern.to_string())]
+        );
         Ok(result)
     }
 }

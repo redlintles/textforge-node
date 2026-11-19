@@ -6,9 +6,9 @@ use crate::{
 };
 use std::borrow::Cow;
 
-/// UNIQLN — Keep the first occurrence of each exact line content, in original order.
+/// `uniqln;` — Keep the first occurrence of each line.
 ///
-/// Uses one-based indices and shared logical-line semantics. See `docs/lines.md`.
+/// Uses the shared logical-line semantics. See `docs/lines.md`.
 ///
 /// ```
 /// use textforge::tokens::{InstructionMethods, transforms::uniqln::Uniqln};
@@ -20,7 +20,7 @@ pub struct Uniqln {
     params: Vec<TextForgeParamTypes>,
 }
 impl Uniqln {
-    /// Construct `uniqln`. Line indices are one-based.
+    /// Construct `uniqln`.
     pub fn new() -> Result<Self, TextForgeError> {
         let mut token = Self::default();
         token.set_params(&[])?;
@@ -42,7 +42,9 @@ impl InstructionMethods for Uniqln {
         let mut parts = vec![self.get_string_repr().to_owned()];
         for parameter in &self.params {
             parts.push(match parameter {
-                TextForgeParamTypes::String(value) => shell_words::quote(value).into_owned(),
+                TextForgeParamTypes::String(value) => {
+                    crate::text::line_parser::quote(value).into_owned()
+                }
                 TextForgeParamTypes::Usize(value) => value.to_string(),
                 _ => String::new(),
             });
@@ -50,7 +52,7 @@ impl InstructionMethods for Uniqln {
         format!("{};\n", parts.join(" ")).into()
     }
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 0, "uniqln", "Invalid line instruction arity")?;
+        check_vec_len(params, 0, "uniqln", "")?;
 
         self.params = params.to_vec();
         Ok(())

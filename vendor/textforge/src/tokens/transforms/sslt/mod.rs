@@ -12,7 +12,7 @@ use crate::utils::validations::check_vec_len;
 
 use crate::utils::errors::{TextForgeError, TextForgeErrorCode};
 
-/// SSLT - Split Select
+/// `sslt {pattern} {index};` — Split by `pattern` and keep piece `index`.
 ///
 /// Splits `input` by `pattern and return `index` of the resulting vec,
 /// *discarding* the rest of the text in the process.
@@ -29,20 +29,20 @@ use crate::utils::errors::{TextForgeError, TextForgeErrorCode};
 /// ```
 #[derive(Clone)]
 pub struct Sslt {
+    /// The regular expression to match.
     pub pattern: Regex,
+    /// The index the instruction applies to.
     pub index: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Sslt {
+    /// Builds `sslt {pattern} {index};` with the given parameters.
+    ///
+    /// Fails if `pattern` is not a valid regular expression.
     pub fn new(pattern: &str, index: usize) -> Result<Self, TextForgeError> {
-        let pattern = Regex::new(pattern).map_err(|e| {
-            TextForgeError::new(
-                TextForgeErrorCode::TextParsingError(e.to_string().into()),
-                "",
-                "",
-            )
-        })?;
+        let pattern = Regex::new(pattern)
+            .map_err(|e| crate::utils::errors::regex_error("sslt", pattern, e))?;
         Ok(Sslt {
             index,
             params: vec![pattern.to_string().into(), index.into()],
@@ -54,7 +54,7 @@ impl Sslt {
 impl Default for Sslt {
     fn default() -> Self {
         Sslt {
-            pattern: Regex::new("").unwrap(),
+            pattern: crate::utils::regexes::EMPTY_RE.clone(),
             index: 0,
             params: vec!["".to_string().into(), (0).into()],
         }
@@ -84,10 +84,19 @@ impl InstructionMethods for Sslt {
             .ok_or_else(|| {
                 TextForgeError::new(
                     TextForgeErrorCode::IndexOutOfRange(
-                        "Index does not exist in the splitted vec".into(),
+                        format!(
+                            "piece {} does not exist: splitting by `{}` gives {}",
+                            self.index,
+                            self.pattern.as_str(),
+                            crate::utils::errors::plural(
+                                self.pattern.split(&input).count(),
+                                "piece"
+                            )
+                        )
+                        .into(),
                     ),
-                    self.to_textforge_line(),
-                    input.to_string(),
+                    "",
+                    crate::utils::errors::input_excerpt(&input),
                 )
             })?;
         let start = result.as_ptr() as usize - input.as_ptr() as usize;
@@ -103,17 +112,12 @@ impl InstructionMethods for Sslt {
 
         check_vec_len(params, 2, "sslt", "")?;
 
-        let pattern_payload = parse_args!(params, 0, String, "Pattern should be of string type");
+        let pattern_payload = parse_args!(params, 0, String, "pattern");
 
-        self.pattern = Regex::new(&pattern_payload).map_err(|_| {
-            TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Failed to create regex".into()),
-                "sslt",
-                pattern_payload.clone(),
-            )
-        })?;
+        self.pattern = Regex::new(&pattern_payload)
+            .map_err(|error| crate::utils::errors::regex_error("sslt", &pattern_payload, error))?;
 
-        self.index = parse_args!(params, 1, Usize, "Index should be of type Usize");
+        self.index = parse_args!(params, 1, Usize, "index");
 
         self.params = vec![self.pattern.to_string().into(), self.index.into()];
 

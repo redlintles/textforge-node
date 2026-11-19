@@ -10,7 +10,7 @@ use crate::{
 };
 
 use crate::parser::params::TextForgeParamTypes;
-/// Token `Ate` — Add to End
+/// `ate {text};` — Add `text` to the end.
 ///
 /// Appends `text` to the end of `input`
 ///
@@ -25,11 +25,13 @@ use crate::parser::params::TextForgeParamTypes;
 
 #[derive(Clone, Default)]
 pub struct Ate {
+    /// The text to add or insert.
     pub text: String,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Ate {
+    /// Builds `ate {text};` with the given parameters.
     pub fn new(text: &str) -> Self {
         Ate {
             text: text.to_string(),
@@ -79,11 +81,10 @@ impl InstructionMethods for Ate {
     }
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
         use crate::parse_args;
-        use crate::parser::params::TextForgeParamTypesJoin;
 
-        check_vec_len(params, 1, "ate", params.join(""))?;
+        check_vec_len(params, 1, "ate", "")?;
 
-        self.text = parse_args!(params, 0, String, "Text should be of string type");
+        self.text = parse_args!(params, 0, String, "text");
 
         self.params = vec![self.text.to_string().into()];
 

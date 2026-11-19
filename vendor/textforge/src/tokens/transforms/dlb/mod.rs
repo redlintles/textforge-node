@@ -10,7 +10,7 @@ use crate::parser::params::TextForgeParamTypes;
 use crate::tokens::InstructionMethods;
 use crate::utils::validations::{check_index_against_input, check_vec_len};
 
-/// Dlb - Delete Before
+/// `dlb {index};` — Delete every character before `index`.
 /// Delete all characters before `index` in the specified `input`
 ///
 /// It will throw an `TextForgeError` if index does not exists in the current `input`
@@ -22,16 +22,18 @@ use crate::utils::validations::{check_index_against_input, check_vec_len};
 ///
 /// let token = Dlb::new(3);
 ///
-/// assert_eq!(token.transform("banana laranja vermelha azul".into(),None).unwrap().to_string(), "ana laranja vermelha azul")
+/// assert_eq!(token.transform("banana orange red blue".into(),None).unwrap().to_string(), "ana orange red blue")
 ///
 /// ```
 #[derive(Clone, Default)]
 pub struct Dlb {
+    /// The index the instruction applies to.
     pub index: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Dlb {
+    /// Builds `dlb {index};` with the given parameters.
     pub fn new(index: usize) -> Self {
         Dlb {
             index,
@@ -67,14 +69,14 @@ impl InstructionMethods for Dlb {
         Err(TextForgeError::new(
             TextForgeErrorCode::IndexOutOfRange(
                 format!(
-                    "Supported indexes 0-{}, entered index {}",
-                    input.chars().count().saturating_sub(1),
-                    self.index
+                    "character index {} is out of range: the text has {}",
+                    self.index,
+                    crate::utils::errors::plural(input.chars().count(), "character")
                 )
                 .into(),
             ),
-            self.to_textforge_line(),
-            input.to_string(),
+            "",
+            crate::utils::errors::input_excerpt(&input),
         ))
     }
     fn get_string_repr(&self) -> &'static str {
@@ -85,7 +87,7 @@ impl InstructionMethods for Dlb {
 
         check_vec_len(params, 1, "dlb", "")?;
 
-        self.index = parse_args!(params, 0, Usize, "Index should be of usize type");
+        self.index = parse_args!(params, 0, Usize, "index");
         self.params = vec![self.index.into()];
 
         Ok(())

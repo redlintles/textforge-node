@@ -6,9 +6,9 @@ use crate::{
 };
 use std::borrow::Cow;
 
-/// JOINLN — Join line contents with a separator, discarding the final terminator.
+/// `joinln {separator};` — Join the lines with `separator`.
 ///
-/// Uses one-based indices and shared logical-line semantics. See `docs/lines.md`.
+/// Uses the shared logical-line semantics. See `docs/lines.md`.
 ///
 /// ```
 /// use textforge::tokens::{InstructionMethods, transforms::joinln::Joinln};
@@ -21,7 +21,7 @@ pub struct Joinln {
     params: Vec<TextForgeParamTypes>,
 }
 impl Joinln {
-    /// Construct `joinln`. Line indices are one-based.
+    /// Construct `joinln`.
     pub fn new(separator: &str) -> Result<Self, TextForgeError> {
         let mut token = Self::default();
         token.set_params(&[separator.to_owned().into()])?;
@@ -50,7 +50,9 @@ impl InstructionMethods for Joinln {
         let mut parts = vec![self.get_string_repr().to_owned()];
         for parameter in &self.params {
             parts.push(match parameter {
-                TextForgeParamTypes::String(value) => shell_words::quote(value).into_owned(),
+                TextForgeParamTypes::String(value) => {
+                    crate::text::line_parser::quote(value).into_owned()
+                }
                 TextForgeParamTypes::Usize(value) => value.to_string(),
                 _ => String::new(),
             });
@@ -58,8 +60,8 @@ impl InstructionMethods for Joinln {
         format!("{};\n", parts.join(" ")).into()
     }
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 1, "joinln", "Invalid line instruction arity")?;
-        let separator = crate::parse_args!(params, 0, String, "Expected String");
+        check_vec_len(params, 1, "joinln", "")?;
+        let separator = crate::parse_args!(params, 0, String, "separator");
         self.separator = separator;
 
         self.params = params.to_vec();

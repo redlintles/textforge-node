@@ -14,7 +14,7 @@ use crate::{
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// TLCS - To Lowercase Single
+/// `tlcs {index};` — Lowercase the character at `index`.
 ///
 /// Lowercases a single character in `input` identified by `index`
 ///
@@ -36,6 +36,7 @@ pub struct Tlcs {
 }
 
 impl Tlcs {
+    /// Builds `tlcs {index};` with the given parameters.
     pub fn new(index: usize) -> Self {
         Tlcs {
             index,
@@ -82,7 +83,7 @@ impl InstructionMethods for Tlcs {
 
         check_vec_len(params, 1, "tlcs", "")?;
 
-        self.index = parse_args!(params, 0, Usize, "Index should be of usize type");
+        self.index = parse_args!(params, 0, Usize, "index");
         self.params = vec![self.index.into()];
 
         Ok(())

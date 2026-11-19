@@ -6,16 +6,13 @@ use crate::{
     parse_args,
     parser::params::TextForgeParamTypes,
     tokens::InstructionMethods,
-    utils::{
-        errors::{TextForgeError, TextForgeErrorCode},
-        validations::check_vec_len,
-    },
+    utils::{errors::TextForgeError, validations::check_vec_len},
 };
 
 #[cfg(feature = "test_access")]
 pub mod test;
 
-/// EMJ - Extract Matches Joined
+/// `emj {pattern} {separator};` — Keep only the matches, joined with `separator`.
 ///
 /// Finds every non-overlapping match of `pattern` in `input`, discards everything
 /// that did not match, and joins the surviving matches (in the order they appear)
@@ -30,15 +27,17 @@ pub mod test;
 /// ```rust
 /// use textforge::tokens::{InstructionMethods, transforms::emj::Emj};
 ///
-/// let token = Emj::new("laranja", ",").unwrap();
+/// let token = Emj::new("orange", ",").unwrap();
 ///
 /// assert_eq!(
-///     token.transform("banana laranja banana laranja".into(),None).unwrap().to_string(),
-///     "laranja,laranja");
+///     token.transform("banana orange banana orange".into(),None).unwrap().to_string(),
+///     "orange,orange");
 /// ```
 #[derive(Clone, Debug)]
 pub struct Emj {
+    /// The regular expression to match.
     pub pattern: Regex,
+    /// Text placed between the kept matches.
     pub separator: String,
     params: Vec<TextForgeParamTypes>,
 }
@@ -61,7 +60,7 @@ impl Emj {
 impl Default for Emj {
     fn default() -> Self {
         Emj {
-            pattern: Regex::new("").unwrap(),
+            pattern: crate::utils::regexes::EMPTY_RE.clone(),
             separator: "".to_string(),
             params: vec!["".to_string().into(), "".to_string().into()],
         }
@@ -75,17 +74,12 @@ impl InstructionMethods for Emj {
 
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
         check_vec_len(params, 2, "emj", "")?;
-        let pattern_payload = parse_args!(params, 0, String, "Pattern should be of string type");
+        let pattern_payload = parse_args!(params, 0, String, "pattern");
 
-        self.pattern = Regex::new(&pattern_payload).map_err(|_| {
-            TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Failed to create regex".into()),
-                "emj",
-                pattern_payload.clone(),
-            )
-        })?;
+        self.pattern = Regex::new(&pattern_payload)
+            .map_err(|error| crate::utils::errors::regex_error("emj", &pattern_payload, error))?;
 
-        self.separator = parse_args!(params, 1, String, "separator should be of type String");
+        self.separator = parse_args!(params, 1, String, "separator");
         self.params = vec![
             self.pattern.to_string().into(),
             self.separator.clone().into(),

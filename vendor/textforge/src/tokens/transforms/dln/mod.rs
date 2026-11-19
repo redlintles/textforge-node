@@ -10,13 +10,13 @@ use crate::{
 };
 use std::borrow::Cow;
 
-/// DLN — Delete one line, including its terminator.
+/// `dln {line};` — Delete `line`.
 ///
-/// Uses one-based indices and shared logical-line semantics. See `docs/lines.md`.
+/// Line indices start at 0 (Golden Rule 22); shared logical-line semantics. See `docs/lines.md`.
 ///
 /// ```
 /// use textforge::tokens::{InstructionMethods, transforms::dln::Dln};
-/// let token = Dln::new(1).unwrap();
+/// let token = Dln::new(0).unwrap();
 /// assert_eq!(token.transform("a\nb".into(), None).unwrap(), "b");
 /// ```
 #[derive(Clone)]
@@ -25,7 +25,7 @@ pub struct Dln {
     params: Vec<TextForgeParamTypes>,
 }
 impl Dln {
-    /// Construct `dln`. Line indices are one-based.
+    /// Construct `dln`. Line indices start at 0.
     pub fn new(line: usize) -> Result<Self, TextForgeError> {
         let mut token = Self::default();
         token.set_params(&[line.into()])?;
@@ -35,8 +35,8 @@ impl Dln {
 impl Default for Dln {
     fn default() -> Self {
         Self {
-            line: 1,
-            params: vec![1usize.into()],
+            line: 0,
+            params: vec![0usize.into()],
         }
     }
 }
@@ -54,7 +54,9 @@ impl InstructionMethods for Dln {
         let mut parts = vec![self.get_string_repr().to_owned()];
         for parameter in &self.params {
             parts.push(match parameter {
-                TextForgeParamTypes::String(value) => shell_words::quote(value).into_owned(),
+                TextForgeParamTypes::String(value) => {
+                    crate::text::line_parser::quote(value).into_owned()
+                }
                 TextForgeParamTypes::Usize(value) => value.to_string(),
                 _ => String::new(),
             });
@@ -62,15 +64,8 @@ impl InstructionMethods for Dln {
         format!("{};\n", parts.join(" ")).into()
     }
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 1, "dln", "Invalid line instruction arity")?;
-        let line = crate::parse_args!(params, 0, Usize, "Expected Usize");
-        if line == 0 {
-            return Err(crate::utils::lines::invalid(
-                "dln",
-                "Line numbers start at one",
-                "0",
-            ));
-        }
+        check_vec_len(params, 1, "dln", "")?;
+        let line = crate::parse_args!(params, 0, Usize, "line");
         self.line = line;
 
         self.params = params.to_vec();
@@ -84,11 +79,11 @@ impl InstructionMethods for Dln {
         let count = lines(&input).count();
         check_line(self.line, count, "dln", &input)?;
         let start: usize = lines(&input)
-            .take(self.line - 1)
+            .take(self.line)
             .map(|(t, e)| t.len() + e.len())
             .sum();
         let length: usize = lines(&input)
-            .skip(self.line - 1)
+            .skip(self.line)
             .take(1)
             .map(|(t, e)| t.len() + e.len())
             .sum();

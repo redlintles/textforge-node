@@ -1,19 +1,18 @@
 use std::borrow::Cow;
 
 use crate::{
+    context::builtins::{CurrentText, VarReader, check_definable},
     context::execution_context::{GlobalContextMethods, GlobalExecutionContext, VarValues},
     parse_args,
     parser::params::TextForgeParamTypes,
     tokens::InstructionMethods,
-    utils::{
-        errors::{TextForgeError, TextForgeErrorCode::RequiredContextError},
-        validations::check_vec_len,
-    },
+    utils::{errors::TextForgeError, validations::check_vec_len},
 };
 
 #[cfg(feature = "test_access")]
 pub mod test;
 
+/// `mutv {name} = {value};` — Change a mutable variable.
 #[derive(Clone)]
 pub struct Mutv {
     val_name: String,
@@ -42,6 +41,10 @@ impl InstructionMethods for Mutv {
     fn get_opcode(&self) -> u32 {
         0x3a
     }
+    // Bound state is immutable; only the execution context changes.
+    fn supports_preparation(&self) -> bool {
+        true
+    }
     fn get_string_repr(&self) -> &'static str {
         "mutv"
     }
@@ -55,15 +58,12 @@ impl InstructionMethods for Mutv {
         input: Cow<'a, str>,
         context: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
-        let context = context.ok_or_else(|| {
-            TextForgeError::new(
-                RequiredContextError("Context required for proper working!".into()),
-                std::borrow::Cow::Borrowed("mutv"),
-                std::borrow::Cow::Borrowed(""),
-            )
-        })?;
+        let context = context
+            .ok_or_else(|| crate::utils::errors::context_required("mutv", "change the variable"))?;
         let value = match &self.val_value {
-            TextForgeParamTypes::VarRef(name) => context.get_var(name)?.value.clone(),
+            TextForgeParamTypes::VarRef(name) => VarReader::new(context, CurrentText::Str(&input))
+                .value(name)?
+                .into_owned(),
             other => VarValues::try_from(other.clone())?,
         };
 
@@ -78,9 +78,10 @@ impl InstructionMethods for Mutv {
         &mut self,
         params: &[crate::parser::params::TextForgeParamTypes],
     ) -> Result<(), crate::utils::errors::TextForgeError> {
-        check_vec_len(params, 2, "mutv", "param parsing error, invalid vec len")?;
+        check_vec_len(params, 2, "mutv", "")?;
 
-        self.val_name = parse_args!(params, 0, String, "Val name should be of string type");
+        self.val_name = parse_args!(params, 0, String, "name");
+        check_definable(&self.val_name, "mutv")?;
         self.val_value = params[1].clone();
 
         self.params = vec![self.val_name.to_string().into(), self.val_value.clone()];

@@ -10,7 +10,7 @@ use crate::{tokens::InstructionMethods, utils::validations::check_chunk_bound_in
 use crate::utils::errors::{TextForgeError, TextForgeErrorCode};
 
 use crate::parser::params::TextForgeParamTypes;
-/// Dlc - Delete Chunk
+/// `dlc {start} {end};` — Delete the characters `start..=end`.
 ///
 /// Deletes an specific subslice of `input` delimited by `start_index` and `end_index`(inclusive)
 ///
@@ -21,17 +21,22 @@ use crate::parser::params::TextForgeParamTypes;
 ///
 /// let token = Dlc::new(1,5).unwrap();
 ///
-/// assert_eq!(token.transform("bananalaranjacheiadecanja".into(),None).unwrap().to_string(), "blaranjacheiadecanja")
+/// assert_eq!(token.transform("bananaorangefullofjam".into(),None).unwrap().to_string(), "borangefullofjam")
 ///
 /// ```
 #[derive(Clone, Default)]
 pub struct Dlc {
+    /// First character or word of the inclusive range.
     pub start_index: usize,
+    /// Last character or word of the inclusive range.
     pub end_index: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Dlc {
+    /// Builds `dlc {start} {end};` with the given parameters.
+    ///
+    /// Fails if the parameters are invalid (for a range, if `start > end`).
     pub fn new(start_index: usize, end_index: usize) -> Result<Self, TextForgeError> {
         check_chunk_bound_indexes(start_index, end_index, None)?;
         Ok(Dlc {
@@ -61,16 +66,13 @@ impl InstructionMethods for Dlc {
     ) -> Result<Cow<'a, str>, TextForgeError> {
         let len = input.chars().count();
 
-        // opcional: se string vazia, deletar "tudo" vira vazio
-        if len == 0 {
-            return Ok("".into());
-        }
-
+        // deleting "everything" from an empty text gives an empty text
         let mut end = self.end_index;
 
-        // ✅ clamp correto (inclusive range)
+        // ✅ clamp correto (inclusive range). Empty input wraps here and the
+        // check below reports a missing start index, as in `slt` and `ctc`.
         if end >= len {
-            end = len - 1;
+            end = len.wrapping_sub(1);
         }
 
         check_chunk_bound_indexes(self.start_index, end, Some(input.as_ref()))?;
@@ -83,22 +85,23 @@ impl InstructionMethods for Dlc {
                 TextForgeError::new(
                     TextForgeErrorCode::IndexOutOfRange(
                         format!(
-                            "Invalid Index for this specific input, supported indexes 0-{}, entered index {}",
-                            input.chars().count().saturating_sub(1),
-                            self.start_index
-                        ).into()
+                            "the range starts at character {}, but the text has {}",
+                            self.start_index,
+                            crate::utils::errors::plural(input.chars().count(), "character")
+                        )
+                        .into(),
                     ),
-                    self.to_textforge_line(),
-                    input.to_string()
+                    "",
+                    crate::utils::errors::input_excerpt(&input),
                 )
             })?;
 
-        // ✅ agora end é garantidamente <= last_index, então end+1 pode ser == len
+        // end is now <= last_index, so end + 1 may equal len
         let end_index = input
             .char_indices()
             .nth(end + 1)
             .map(|(i, _)| i)
-            .unwrap_or_else(|| input.len()); // se end é o último char, after começa no fim
+            .unwrap_or_else(|| input.len()); // when end is the last char, `after` starts at the end
 
         Ok(crate::utils::allocation::replace(
             input,
@@ -115,8 +118,8 @@ impl InstructionMethods for Dlc {
 
         check_vec_len(params, 2, "dlc", "")?;
 
-        self.start_index = parse_args!(params, 0, Usize, "Index should be of usize type");
-        self.end_index = parse_args!(params, 1, Usize, "Index should be of usize type");
+        self.start_index = parse_args!(params, 0, Usize, "start");
+        self.end_index = parse_args!(params, 1, Usize, "end");
         self.params = vec![self.start_index.into(), self.end_index.into()];
 
         Ok(())

@@ -14,7 +14,7 @@ use crate::{
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// TUCS - To Uppercase Single
+/// `tucs {index};` — Uppercase the character at `index`.
 ///
 /// Uppercases a single character in `input` identified by `index`
 ///
@@ -36,6 +36,7 @@ pub struct Tucs {
 }
 
 impl Tucs {
+    /// Builds `tucs {index};` with the given parameters.
     pub fn new(index: usize) -> Self {
         Tucs {
             index,
@@ -66,7 +67,7 @@ impl InstructionMethods for Tucs {
     ) -> Result<Cow<'a, str>, TextForgeError> {
         check_index_against_input(self.index, input.as_ref())?;
         let mut result = String::with_capacity(input.len());
-        for (i, c) in input.char_indices() {
+        for (i, c) in input.chars().enumerate() {
             if i == self.index {
                 result.extend(c.to_uppercase());
             } else {
@@ -81,7 +82,7 @@ impl InstructionMethods for Tucs {
 
         check_vec_len(params, 1, "tucs", "")?;
 
-        self.index = parse_args!(params, 0, Usize, "Index should be of usize type");
+        self.index = parse_args!(params, 0, Usize, "index");
         self.params = vec![self.index.into()];
 
         Ok(())

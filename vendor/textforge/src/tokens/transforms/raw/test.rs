@@ -112,7 +112,7 @@ mod tests {
     fn set_params_rejects_wrong_param_types() {
         let mut t = Raw::default();
 
-        // primeiro deveria ser String(pattern)
+        // the first should be String(pattern)
         let params = vec![
             TextForgeParamTypes::Usize(7),
             TextForgeParamTypes::String("b".to_string()),
@@ -121,7 +121,9 @@ mod tests {
         let got = t.set_params(&params);
 
         let expected = Err(crate::utils::errors::TextForgeError::new(
-            TextForgeErrorCode::InvalidParameters("Pattern should be of string type".into()),
+            TextForgeErrorCode::InvalidParameters(
+                "parameter 1 (`pattern`) must be text, but it is a number".into(),
+            ),
             "",
             "",
         ));
@@ -141,8 +143,8 @@ mod tests {
         let got = t.set_params(&params);
 
         let expected = Err(crate::utils::errors::TextForgeError::new(
-            TextForgeErrorCode::TextParsingError("Failed to create regex".into()),
-            "sslt",
+            TextForgeErrorCode::TextParsingError("`(` is not a valid regular expression".into()),
+            "raw",
             "(".to_string(),
         ));
 
@@ -150,16 +152,16 @@ mod tests {
     }
 
     // ============================
-    // Bytecode-only tests (separados)
+    // Bytecode-only tests
     // ============================
     #[cfg(feature = "bytecode")]
     mod bytecode_tests {
         use super::*;
 
         #[test]
-        fn get_opcode_is_0b() {
+        fn get_opcode_matches_registry() {
             let t = Raw::default();
-            assert_eq!(t.get_opcode(), 0x0b);
+            assert_eq!(t.get_opcode(), 0x0c);
         }
 
         #[test]
@@ -177,7 +179,7 @@ mod tests {
 
             let opcode = u32::from_be_bytes(bc[i..i + 4].try_into().unwrap());
             i += 4;
-            assert_eq!(opcode, 0x0b);
+            assert_eq!(opcode, 0x0c);
 
             let param_count = bc[i] as usize;
             i += 1;

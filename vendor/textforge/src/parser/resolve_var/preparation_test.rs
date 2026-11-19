@@ -1,6 +1,6 @@
 use super::*;
 use crate::api::processor::{TextForgeProcessor, TextForgeProcessorMethods};
-use crate::context::execution_context::{VarEntry, VarValues};
+use crate::context::execution_context::{GlobalContextMethods, VarEntry, VarValues};
 use crate::tokens::transforms::{atb::Atb, ate::Ate};
 use std::sync::{
     Arc,
@@ -152,4 +152,196 @@ fn invalid_parameters_still_fail_only_when_the_instruction_executes() {
     );
     let id = processor.add_transform(vec![invalid]);
     assert!(processor.run_transform(&id, Cow::Borrowed("abc")).is_err());
+}
+
+fn counting_child(binds: &Arc<AtomicUsize>) -> TokenWrapper {
+    TokenWrapper::new(
+        Box::new(CountingPrefix {
+            inner: Atb::default(),
+            binds: Arc::clone(binds),
+            opt_in: true,
+        }),
+        Some(vec![ValType::Literal("!".to_string().into())]),
+    )
+}
+
+fn with_child(outer: &str, child: TokenWrapper) -> TokenWrapper {
+    // Parse the outer instruction, then swap its nested instruction.
+    let parsed = crate::text::reader::read_from_text(outer).unwrap();
+    let mut params = parsed.get_params().clone();
+    if let Some(last) = params.last_mut() {
+        *last = ValType::Literal(TextForgeParamTypes::Token(child));
+    }
+    TokenWrapper::new(parsed.get_default_token(), Some(params))
+}
+
+#[test]
+fn nested_instructions_are_bound_once_per_registration() {
+    // Before, the nested instruction was re-bound on every iteration and every
+    // execution (a regex child recompiled its pattern each time).
+    for outer in [
+        "iter 4 times null;",
+        "onln 0 apply null;",
+        "onlni 0 0 apply null;",
+        "onck 0 0 apply null;",
+        "ifdc x do null;",
+        "onln '[[1 - 1]]' apply null;",
+    ] {
+        let binds = Arc::new(AtomicUsize::new(0));
+        let mut processor = TextForgeProcessor::new();
+        let id = processor.add_transform(vec![with_child(outer, counting_child(&binds))]);
+        let after_registration = binds.load(Ordering::SeqCst);
+        assert_eq!(after_registration, 1, "{outer}");
+        for _ in 0..3 {
+            processor.run_transform(&id, Cow::Borrowed("x")).unwrap();
+        }
+        assert_eq!(binds.load(Ordering::SeqCst), 1, "{outer}");
+    }
+}
+
+#[test]
+fn exported_nested_templates_carry_no_cached_binding() {
+    let binds = Arc::new(AtomicUsize::new(0));
+    let mut processor = TextForgeProcessor::new();
+    let id = processor.add_transform(vec![with_child(
+        "iter 2 times null;",
+        counting_child(&binds),
+    )]);
+    let exported = processor.get_transform_vec(&id).unwrap().remove(0);
+    assert!(exported.prepared.is_none());
+    for parameter in exported.get_params() {
+        if let ValType::Literal(TextForgeParamTypes::Token(child)) = parameter {
+            assert!(child.prepared.is_none());
+        }
+    }
+}
+
+#[test]
+fn dynamic_nested_parameters_are_still_resolved_per_execution() {
+    let mut processor = TextForgeProcessor::new();
+    let tokens = [
+        "iter 3 times ate '{{__COUNTER__}}';",
+        "onln 0 apply ate '[[2 * 3]]';",
+    ]
+    .iter()
+    .map(|line| crate::text::reader::read_from_text(line).unwrap())
+    .collect();
+    let id = processor.add_transform(tokens);
+    for _ in 0..2 {
+        assert_eq!(
+            processor.run_transform(&id, Cow::Borrowed("x")).unwrap(),
+            "x0126"
+        );
+    }
+}
+
+#[test]
+fn constant_templates_are_bound_once_and_dynamic_ones_compiled() {
+    let mut constant = crate::text::reader::read_from_text("ate '[[1 + 2 * 3]]';").unwrap();
+    constant.prepare_constant();
+    assert!(constant.prepared.is_some());
+    let mut context = GlobalExecutionContext::new();
+    assert_eq!(
+        constant
+            .apply_token(Cow::Borrowed("x"), &mut context)
+            .unwrap(),
+        "x7"
+    );
+
+    // A failing constant expression is not bound; it fails when it runs.
+    let mut failing = crate::text::reader::read_from_text("ate '[[1 / 0]]';").unwrap();
+    failing.prepare_constant();
+    assert!(failing.prepared.is_none() && failing.compiled.is_some());
+    assert!(
+        failing
+            .apply_token(Cow::Borrowed("x"), &mut context)
+            .is_err()
+    );
+
+    let mut dynamic = crate::text::reader::read_from_text("ate '[[n * 2]]{{n}}';").unwrap();
+    dynamic.prepare_constant();
+    assert!(dynamic.prepared.is_none() && dynamic.compiled.is_some());
+    assert!(dynamic.without_preparation().compiled.is_none());
+}
+
+#[test]
+fn prepared_context_instructions_still_act_on_every_run() {
+    let mut processor = TextForgeProcessor::new();
+    let source = "var a = 1;\nmutv a = 2;\nval c = 3;\neval 'a + c' in d;\n\
+                  blk b assoc ate '{{d}}';\ncblk b;\nifdc x do ate '!';\n";
+    let tokens: Vec<_> = source
+        .lines()
+        .map(|line| crate::text::reader::read_from_text(line).unwrap())
+        .collect();
+    let id = processor.add_transform(tokens);
+    for _ in 0..3 {
+        assert_eq!(
+            processor.run_transform(&id, Cow::Borrowed("x")).unwrap(),
+            "x5!"
+        );
+    }
+}
+
+#[test]
+fn dynamic_bindings_are_reused_only_while_the_parameters_repeat() {
+    for opt_in in [true, false] {
+        let binds = Arc::new(AtomicUsize::new(0));
+        let token = CountingPrefix {
+            inner: Atb::default(),
+            binds: Arc::clone(&binds),
+            opt_in,
+        };
+        let mut wrapper = TokenWrapper::new(
+            Box::new(token),
+            Some(vec![ValType::Literal("<{{name}}>".to_string().into())]),
+        );
+        wrapper.prepare_constant();
+        assert!(wrapper.prepared.is_none());
+        assert_eq!(wrapper.memo.is_some(), opt_in);
+        let mut context = GlobalExecutionContext::new();
+        let names = ["a", "a", "b", "a", "a"];
+        for name in names {
+            context
+                .add_var(
+                    "name",
+                    VarEntry {
+                        value: VarValues::String(name.into()),
+                        mutable: true,
+                    },
+                )
+                .unwrap();
+            // Clones made during execution share the memo.
+            let clone = wrapper.clone();
+            assert_eq!(
+                clone.apply_token(Cow::Borrowed("x"), &mut context).unwrap(),
+                format!("<{name}>x")
+            );
+        }
+        assert_eq!(binds.load(Ordering::SeqCst), if opt_in { 3 } else { 5 });
+        assert!(wrapper.without_preparation().memo.is_none());
+    }
+}
+
+#[test]
+fn memoized_bindings_still_report_parameter_errors_every_time() {
+    let mut processor = TextForgeProcessor::new();
+    let tokens = ["var p = '[';", "raw {{p}} X;"]
+        .iter()
+        .map(|line| crate::text::reader::read_from_text(line).unwrap())
+        .collect();
+    let id = processor.add_transform(tokens);
+    for _ in 0..2 {
+        assert!(processor.run_transform(&id, Cow::Borrowed("abc")).is_err());
+    }
+    let tokens = ["var p = 'b';", "raw '{{p}}' X;"]
+        .iter()
+        .map(|line| crate::text::reader::read_from_text(line).unwrap())
+        .collect();
+    let id = processor.add_transform(tokens);
+    for _ in 0..2 {
+        assert_eq!(
+            processor.run_transform(&id, Cow::Borrowed("abc")).unwrap(),
+            "aXc"
+        );
+    }
 }

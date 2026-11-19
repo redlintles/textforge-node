@@ -37,12 +37,79 @@ pub(crate) fn replace<'a>(
     }
 }
 
+/// Rewrite words `0..=last` (words as `split_whitespace` defines them) and
+/// keep everything else, separators included, byte for byte. `rewrite(index,
+/// word)` returns the new text for a word, or `None` to keep it. Words after
+/// `last` are not visited, and an unchanged text is returned without copying.
+pub(crate) fn rewrite_words<'a>(
+    input: Cow<'a, str>,
+    last: usize,
+    mut rewrite: impl FnMut(usize, &str) -> Option<String>,
+) -> Cow<'a, str> {
+    let base = input.as_ptr() as usize;
+    let mut output: Option<String> = None;
+    let mut copied = 0;
+    for (index, word) in input.split_whitespace().enumerate() {
+        if index > last {
+            break;
+        }
+        let Some(new) = rewrite(index, word).filter(|new| new != word) else {
+            continue;
+        };
+        // `word` is a subslice of `input`: its offset is a pointer difference.
+        let start = word.as_ptr() as usize - base;
+        let output = output.get_or_insert_with(|| String::with_capacity(input.len()));
+        output.push_str(&input[copied..start]);
+        output.push_str(&new);
+        copied = start + word.len();
+    }
+    match output {
+        None => input,
+        Some(mut output) => {
+            output.push_str(&input[copied..]);
+            Cow::Owned(output)
+        }
+    }
+}
+
 /// Append a word with only its first Unicode scalar uppercased.
 pub(crate) fn capitalize_into(output: &mut String, word: &str) {
     let mut chars = word.chars();
     if let Some(first) = chars.next() {
         output.extend(first.to_uppercase());
         output.push_str(chars.as_str());
+    }
+}
+
+/// Append `word` with its first character uppercased and the rest lowercased,
+/// as `jpsc` and `jcmc` join words (`HTTP` becomes `Http`).
+pub(crate) fn title_case_into(output: &mut String, word: &str) {
+    let mut chars = word.chars();
+    let Some(first) = chars.next() else {
+        return;
+    };
+    output.extend(first.to_uppercase());
+    if word.is_ascii() {
+        lowercase_into(output, chars.as_str());
+        return;
+    }
+    // Lowercase the whole word so letters that depend on their position keep
+    // it (`ΟΣ` → `Ος`, with a final sigma), then drop the first letter's part.
+    // The first letter is never a final sigma, so the lowercase word always
+    // starts with its lowercase form.
+    let lower = word.to_lowercase();
+    let first_len: usize = first.to_lowercase().map(char::len_utf8).sum();
+    output.push_str(lower.get(first_len..).unwrap_or_default());
+}
+
+/// Append `text` lowercased.
+pub(crate) fn lowercase_into(output: &mut String, text: &str) {
+    if text.is_ascii() {
+        let start = output.len();
+        output.push_str(text);
+        output[start..].make_ascii_lowercase();
+    } else {
+        output.push_str(&text.to_lowercase());
     }
 }
 
@@ -97,17 +164,18 @@ pub(crate) fn append_line<'a>(input: Cow<'a, str>, text: &str) -> Cow<'a, str> {
     Cow::Owned(output)
 }
 
-/// Insert a logical line; the caller validates the one-based line index.
+/// Insert a logical line before line `line` (base 0; `line == count` appends);
+/// the caller validates the index.
 pub(crate) fn insert_line<'a>(input: Cow<'a, str>, line: usize, text: &str) -> Cow<'a, str> {
     let count = super::lines::lines(&input).count();
-    if line == count.saturating_add(1) {
+    if line == count {
         return append_line(input, text);
     }
     let ending = super::lines::lines(&input)
         .find_map(|(_, e)| (!e.is_empty()).then_some(e))
         .unwrap_or("\n");
     let offset: usize = super::lines::lines(&input)
-        .take(line - 1)
+        .take(line)
         .map(|(t, e)| t.len() + e.len())
         .sum();
     let mut inserted = String::with_capacity(text.len() + ending.len());
@@ -167,5 +235,43 @@ mod tests {
         let mut output = String::new();
         capitalize_into(&mut output, "ßé🍌e\u{301}");
         assert_eq!(output, "SSé🍌e\u{301}");
+    }
+}
+
+#[cfg(test)]
+mod rewrite_words_tests {
+    use super::*;
+
+    fn upper_at(input: &str, at: usize) -> Cow<'_, str> {
+        rewrite_words(Cow::Borrowed(input), at, |i, word| {
+            (i == at).then(|| word.to_uppercase())
+        })
+    }
+
+    #[test]
+    fn only_the_chosen_words_change_and_separators_stay() {
+        assert_eq!(
+            upper_at("  um\tdois\r\n\ntrês  ", 2),
+            "  um\tdois\r\n\nTRÊS  "
+        );
+        assert_eq!(upper_at("a\u{2028}b\u{85}c", 1), "a\u{2028}B\u{85}c");
+        assert_eq!(upper_at("é👩🏽‍💻 x", 0), "É👩🏽‍💻 x");
+    }
+
+    #[test]
+    fn unchanged_text_is_not_copied() {
+        for (input, at) in [("", 0), ("   ", 0), ("A b", 0), ("a b", 5)] {
+            assert!(matches!(upper_at(input, at), Cow::Borrowed(text) if text == input));
+        }
+    }
+
+    #[test]
+    fn words_after_the_last_index_are_not_visited() {
+        let mut visited = Vec::new();
+        let _ = rewrite_words(Cow::Borrowed("a b c d"), 1, |i, _| {
+            visited.push(i);
+            None
+        });
+        assert_eq!(visited, [0, 1]);
     }
 }

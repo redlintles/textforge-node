@@ -3,38 +3,44 @@ use std::{borrow::Cow, path::Path};
 use crate::utils::errors::{TextForgeError, TextForgeErrorCode};
 
 pub fn check_file_path(path: &Path, ext: Option<&str>) -> Result<(), TextForgeError> {
-    // canonicalize() exige que o path exista; isso é ok aqui porque queremos validar um arquivo real.
+    // canonicalize() requires the path to exist; that is fine here, because the file must be real.
     let path = path.canonicalize().map_err(|e| {
         TextForgeError::new(
-            TextForgeErrorCode::ValidationError("Path canonicalization failed".into()),
-            Cow::Borrowed("canonicalize"),
-            format!("{:?} - {}", path, e),
+            TextForgeErrorCode::ValidationError(
+                format!("cannot open the pipeline file {}: {e}", path.display()).into(),
+            ),
+            Cow::Borrowed(""),
+            path.display().to_string(),
         )
     })?;
 
-    check_pipeline_extension(&path, ext)?;
+    check_extension(&path, ext)?;
 
-    // Diretório pai (redundante depois do canonicalize, mas mantém a intenção explícita)
+    // Parent directory (redundant after canonicalize, but keeps the intent explicit)
     let parent = path.parent().ok_or_else(|| {
         TextForgeError::new(
-            TextForgeErrorCode::ValidationError("Path has no parent directory".into()),
-            Cow::Borrowed("check_file_path"),
+            TextForgeErrorCode::ValidationError("the pipeline path has no parent directory".into()),
+            Cow::Borrowed(""),
             path.to_string_lossy().to_string(),
         )
     })?;
 
     if !parent.exists() {
         return Err(TextForgeError::new(
-            TextForgeErrorCode::ValidationError("Parent directory does not exist".into()),
-            Cow::Borrowed("check_file_path"),
+            TextForgeErrorCode::ValidationError(
+                "the directory of the pipeline file does not exist".into(),
+            ),
+            Cow::Borrowed(""),
             parent.to_string_lossy().to_string(),
         ));
     }
 
     if path.is_dir() {
         return Err(TextForgeError::new(
-            TextForgeErrorCode::ValidationError("Path is a directory, not a file".into()),
-            Cow::Borrowed("check_file_path"),
+            TextForgeErrorCode::ValidationError(
+                "the pipeline path is a directory, not a file".into(),
+            ),
+            Cow::Borrowed(""),
             path.to_string_lossy().to_string(),
         ));
     }
@@ -42,128 +48,171 @@ pub fn check_file_path(path: &Path, ext: Option<&str>) -> Result<(), TextForgeEr
     Ok(())
 }
 
-/// Validate format extensions independently from whether the destination exists.
-fn check_pipeline_extension(path: &Path, expected: Option<&str>) -> Result<(), TextForgeError> {
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .ok_or_else(|| {
-            TextForgeError::new(
-                TextForgeErrorCode::ValidationError("No file extension found".into()),
-                "check_file_path",
-                path.display().to_string(),
-            )
-        })?;
-    let accepted = match expected {
-        Some("textforge" | "tft") => matches!(extension, "textforge" | "tft"),
-        Some("textforgebc" | "tfb") => matches!(extension, "textforgebc" | "tfb"),
-        Some(expected) => extension == expected,
-        None => matches!(extension, "textforge" | "tft" | "textforgebc" | "tfb"),
+/// The extension rules of [`check_file_path`]: with `ext`, the file must have
+/// that extension or its alias (`.tft` for `.textforge`, `.tfb` for
+/// `.textforgebc`); without it, any of the four pipeline extensions.
+fn check_extension(path: &Path, ext: Option<&str>) -> Result<(), TextForgeError> {
+    let allowed_extensions = ["textforge", "tft", "textforgebc", "tfb"];
+    let parsed_ext = ext.unwrap_or("tft");
+    // Extension
+    let file_ext = path.extension().and_then(|x| x.to_str()).ok_or_else(|| {
+        TextForgeError::new(
+            TextForgeErrorCode::ValidationError(
+                "a pipeline file needs an extension: .textforge or .tft for text, .textforgebc or .tfb for bytecode".into(),
+            ),
+            Cow::Borrowed(""),
+            path.to_string_lossy().to_string(),
+        )
+    })?;
+
+    // Each format has a short alias: `.tft` for `.textforge`, `.tfb` for
+    // `.textforgebc`. Asking for a format accepts both of its extensions.
+    let alias = match parsed_ext {
+        "textforge" => "tft",
+        "tft" => "textforge",
+        "textforgebc" => "tfb",
+        "tfb" => "textforgebc",
+        other => other,
     };
-    if !accepted {
-        let supported = match expected {
-            Some("textforge" | "tft") => ".textforge or .tft",
-            Some("textforgebc" | "tfb") => ".textforgebc or .tfb",
-            Some(extension) => extension,
-            None => ".textforge, .tft, .textforgebc or .tfb",
-        };
+    if ext.is_some() && file_ext != parsed_ext && file_ext != alias {
         return Err(TextForgeError::new(
             TextForgeErrorCode::ValidationError(
-                format!("Unsupported pipeline extension '.{extension}'; expected {supported}")
+                format!("expected a `.{parsed_ext}` or `.{alias}` file, but the extension is `.{file_ext}`")
                     .into(),
             ),
-            "check_file_path",
-            path.display().to_string(),
+            Cow::Borrowed(""),
+            path.to_string_lossy().to_string(),
         ));
     }
-    Ok(())
-}
 
-/// Prepare a write destination without requiring a pre-existing output file.
-/// Parent directories are created only after callers have validated their data.
-pub(crate) fn prepare_output_path(path: &Path, instruction: &str) -> Result<(), TextForgeError> {
-    if path.file_name().is_none() || path.is_dir() {
+    if ext.is_none() && !allowed_extensions.contains(&file_ext) {
         return Err(TextForgeError::new(
-            TextForgeErrorCode::ValidationError("Output path must name a file".into()),
-            instruction.to_owned(),
-            path.display().to_string(),
+            TextForgeErrorCode::ValidationError(
+                format!(
+                    "`.{file_ext}` is not a pipeline extension; use .textforge or .tft for text, .textforgebc or .tfb for bytecode"
+                )
+                .into(),
+            ),
+            Cow::Borrowed(""),
+            path.to_string_lossy().to_string(),
         ));
     }
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        std::fs::create_dir_all(parent).map_err(|error| {
-            TextForgeError::new(
-                TextForgeErrorCode::FileOpeningError(error.to_string().into()),
-                instruction.to_owned(),
-                path.display().to_string(),
-            )
-        })?;
-    }
+
     Ok(())
 }
 
-/// Check a pipeline output's format before creating its parent directories.
-pub(crate) fn check_pipeline_output_path(
-    path: &Path,
-    extension: Option<&str>,
-) -> Result<(), TextForgeError> {
-    check_pipeline_extension(path, extension)?;
-    prepare_output_path(path, "pipeline output")
+/// Checks a path a pipeline file is about to be written to. The extension
+/// rules are those of [`check_file_path`], but the file does not have to exist
+/// yet: its directory must exist, and the path must not be a directory. Up to
+/// 0.3.2 the writers used `check_file_path`, so they could only overwrite
+/// files that already existed.
+///
+/// ```
+/// use textforge::utils::validations::check_output_file_path;
+///
+/// let directory = std::env::temp_dir();
+/// assert!(check_output_file_path(&directory.join("new-pipeline.tfb"), Some("textforgebc")).is_ok());
+/// assert!(check_output_file_path(&directory.join("new-pipeline.txt"), Some("textforgebc")).is_err());
+/// assert!(check_output_file_path(&directory.join("missing-dir/p.tft"), None).is_err());
+/// ```
+pub fn check_output_file_path(path: &Path, ext: Option<&str>) -> Result<(), TextForgeError> {
+    if path.exists() {
+        return check_file_path(path, ext);
+    }
+    let directory = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    if !directory.is_dir() {
+        return Err(TextForgeError::new(
+            TextForgeErrorCode::FileNotFound(
+                format!(
+                    "cannot write `{}`: the directory `{}` does not exist",
+                    path.display(),
+                    directory.display()
+                )
+                .into(),
+            ),
+            Cow::Borrowed(""),
+            path.display().to_string(),
+        ));
+    }
+    check_extension(path, ext)
 }
 
-/// Valida limites de chunk com índices em *contagem de chars* (não bytes),
-/// assumindo semântica inclusiva em tokens (start..=end).
+/// Checks an inclusive character range `start..=end` (character counts, not
+/// bytes).
 ///
-/// Regras:
-/// - Sempre exige `start_index < end_index`
-/// - Se `check_against` for Some(text):
-///     - exige `start_index` e `end_index` dentro de `0..text.chars().count()`
-///
-/// Obs: se você quiser permitir chunks de 1 caractere (start==end), mude a regra.
+/// - `start_index <= end_index` is required (`start == end` selects one item).
+/// - With `check_against = Some(text)`, both indices must be within
+///   `0..text.chars().count()`.
 pub fn check_chunk_bound_indexes(
     start_index: usize,
     end_index: usize,
     check_against: Option<&str>,
 ) -> Result<(), TextForgeError> {
-    // regra estrutural (independente do texto)
-    if start_index >= end_index {
-        let fmt_err = format!("check_chunk_bound_indexes {} {};", start_index, end_index);
+    let total_chars = check_against.map(|text| text.chars().count());
+
+    // start must exist: checked before the order, because an `end` past the
+    // text is clamped to the last character and would come "before" a missing `start`
+    if let (Some(text), Some(total)) = (check_against, total_chars)
+        && start_index >= total
+    {
         return Err(TextForgeError::new(
-            TextForgeErrorCode::InvalidIndex("Start index must be smaller than end index".into()),
-            Cow::Owned(fmt_err),
-            format!("Start Index: {}, End Index: {}", start_index, end_index),
+            TextForgeErrorCode::IndexOutOfRange(
+                format!(
+                    "the range starts at character {start_index}, but the text has {}{}",
+                    crate::utils::errors::plural(total, "character"),
+                    valid_indices(total)
+                )
+                .into(),
+            ),
+            Cow::Borrowed(""),
+            crate::utils::errors::input_excerpt(text),
         ));
     }
 
-    if let Some(text) = check_against {
-        let total_chars = text.chars().count();
+    // structural rule (independent of the text); the range is inclusive
+    if start_index > end_index {
+        return Err(TextForgeError::new(
+            TextForgeErrorCode::InvalidIndex(
+                format!(
+                    "the range start ({start_index}) is after its end ({end_index}); ranges are written start..=end with start <= end"
+                )
+                .into(),
+            ),
+            Cow::Borrowed(""),
+            format!("start={start_index}, end={end_index}"),
+        ));
+    }
 
-        // start precisa existir
-        if !(0..total_chars).contains(&start_index) {
-            return Err(TextForgeError::new(
-                TextForgeErrorCode::IndexOutOfRange(
-                    "Start index does not exist in current string!".into(),
-                ),
-                Cow::Borrowed("check_chunk_bound_indexes"),
-                text.to_string(),
-            ));
-        }
-
-        // end também precisa existir
-        if !(0..total_chars).contains(&end_index) {
-            return Err(TextForgeError::new(
-                TextForgeErrorCode::IndexOutOfRange(
-                    "End index does not exist in current string!".into(),
-                ),
-                Cow::Borrowed("check_chunk_bound_indexes"),
-                text.to_string(),
-            ));
-        }
+    // end must exist too
+    if let (Some(text), Some(total)) = (check_against, total_chars)
+        && end_index >= total
+    {
+        return Err(TextForgeError::new(
+            TextForgeErrorCode::IndexOutOfRange(
+                format!(
+                    "the range ends at character {end_index}, but the text has {}{}",
+                    crate::utils::errors::plural(total, "character"),
+                    valid_indices(total)
+                )
+                .into(),
+            ),
+            Cow::Borrowed(""),
+            crate::utils::errors::input_excerpt(text),
+        ));
     }
 
     Ok(())
+}
+
+/// `" (valid indices 0 to n-1)"`, or nothing when there is no valid index.
+fn valid_indices(count: usize) -> String {
+    match count {
+        0 => String::new(),
+        count => format!(" (valid indices 0 to {})", count - 1),
+    }
 }
 
 pub fn check_index_against_input(index: usize, input: &str) -> Result<(), TextForgeError> {
@@ -172,15 +221,14 @@ pub fn check_index_against_input(index: usize, input: &str) -> Result<(), TextFo
         return Err(TextForgeError::new(
             TextForgeErrorCode::IndexOutOfRange(
                 format!(
-                    "Index {} does not exist for {}, only indexes between 0-{} are allowed!",
-                    index,
-                    input,
-                    character_count.saturating_sub(1)
+                    "character index {index} is out of range: the text has {}{}",
+                    crate::utils::errors::plural(character_count, "character"),
+                    valid_indices(character_count)
                 )
                 .into(),
             ),
-            Cow::Borrowed("check_index_against_input"),
-            input.to_string(),
+            Cow::Borrowed(""),
+            crate::utils::errors::input_excerpt(input),
         ));
     }
 
@@ -192,26 +240,27 @@ pub fn check_index_against_words(index: usize, input: &str) -> Result<(), TextFo
 
     if word_count == 0 {
         return Err(TextForgeError::new(
-            TextForgeErrorCode::IndexOutOfRange("Input has no words".into()),
-            Cow::Borrowed("check_index_against_words"),
-            input.to_string(),
+            TextForgeErrorCode::IndexOutOfRange(
+                format!("word index {index} is out of range: the text has no words").into(),
+            ),
+            Cow::Borrowed(""),
+            crate::utils::errors::input_excerpt(input),
         ));
     }
 
     if !(0..word_count).contains(&index) {
-        return Err(
-            TextForgeError::new(
-                TextForgeErrorCode::IndexOutOfRange(
-                    format!(
-                        "Word index {} does not exist for input, only indexes between 0-{} are allowed!",
-                        index,
-                        word_count.saturating_sub(1)
-                    ).into()
-                ),
-                Cow::Borrowed("check_index_against_words"),
-                input.to_string()
-            )
-        );
+        return Err(TextForgeError::new(
+            TextForgeErrorCode::IndexOutOfRange(
+                format!(
+                    "word index {index} is out of range: the text has {} (valid indices 0 to {})",
+                    crate::utils::errors::plural(word_count, "word"),
+                    word_count - 1
+                )
+                .into(),
+            ),
+            Cow::Borrowed(""),
+            crate::utils::errors::input_excerpt(input),
+        ));
     }
 
     Ok(())
@@ -226,16 +275,21 @@ pub fn check_vec_len<T>(
     if v.len() == expected_len {
         Ok(())
     } else {
+        let ctx = ctx.into();
         Err(TextForgeError::new(
             TextForgeErrorCode::InvalidArgumentNumber(
                 format!(
-                    "Only {} arguments are allowed for this instruction, passed {}",
-                    expected_len,
-                    v.len()
+                    "`{ctx}` takes {}, but {} given",
+                    crate::utils::errors::plural(expected_len, "parameter"),
+                    if v.len() == 1 {
+                        "1 was".to_owned()
+                    } else {
+                        format!("{} were", v.len())
+                    }
                 )
                 .into(),
             ),
-            ctx.into(),
+            ctx,
             payload.into(),
         ))
     }
@@ -256,6 +310,58 @@ mod tests {
         let mut p = std::env::temp_dir();
         p.push(format!("{}_{}_{}", prefix, std::process::id(), nanos));
         p
+    }
+
+    /// Before: the pipeline writers checked the destination with
+    /// `check_file_path`, which canonicalizes it, so writing a pipeline to a
+    /// file that did not exist yet failed with "cannot open the pipeline file".
+    mod check_output_file_path_tests {
+        use super::{fs, unique_tmp_dir};
+        use crate::api::TextForgeBuilderMethods;
+        use crate::api::processor::{TextForgeProcessor, TextForgeProcessorMethods};
+        use crate::utils::validations::check_output_file_path;
+
+        #[test]
+        fn writers_create_new_pipeline_files() {
+            let directory = unique_tmp_dir("writers_create");
+            fs::create_dir_all(&directory).unwrap();
+            let mut processor = TextForgeProcessor::new();
+            let id = processor
+                .create_pipeline()
+                .to_uppercase_all()
+                .unwrap()
+                .build()
+                .unwrap();
+            let text = directory.join("new.textforge");
+            processor.write_pipeline_to_file(&id, &text).unwrap();
+            let copy = processor.get_pipeline_from_file(&text).unwrap();
+            assert_eq!(processor.process_all(&copy, "ab").unwrap(), "AB");
+            #[cfg(feature = "bytecode")]
+            {
+                let bytecode = directory.join("new.tfb");
+                processor.write_to_bytecode_file(&id, &bytecode).unwrap();
+                let copy = processor.read_from_bytecode_file(&bytecode).unwrap();
+                assert_eq!(processor.process_all(&copy, "ab").unwrap(), "AB");
+                // Bytecode goes to a bytecode extension, as the reader requires.
+                assert!(
+                    processor
+                        .write_to_bytecode_file(&id, &directory.join("wrong.textforge"))
+                        .is_err()
+                );
+            }
+            fs::remove_dir_all(&directory).unwrap();
+        }
+
+        #[test]
+        fn the_directory_must_exist_and_the_path_must_not_be_one() {
+            let directory = unique_tmp_dir("output_rules");
+            assert!(check_output_file_path(&directory.join("p.tft"), None).is_err());
+            fs::create_dir_all(directory.join("d.tft")).unwrap();
+            assert!(check_output_file_path(&directory.join("d.tft"), None).is_err());
+            assert!(check_output_file_path(&directory.join("p.tft"), Some("textforge")).is_ok());
+            assert!(check_output_file_path(&directory.join("p.json"), None).is_err());
+            fs::remove_dir_all(&directory).unwrap();
+        }
     }
 
     #[cfg(test)]
@@ -279,15 +385,13 @@ mod tests {
 
             assert!(result.is_err());
 
-            // Se TextForgeError tiver Display, isso geralmente vira uma checagem bem útil
             let err = result.unwrap_err();
             let msg = format!("{err}");
 
-            // Não assumo a estrutura interna do TextForgeError, então valido por mensagem
             assert!(
-                msg.contains("Only 3 arguments are allowed") || msg.contains("Only 3 arguments")
+                msg.contains("`check_vec_len` takes 3 parameters, but 2 were given"),
+                "{msg}"
             );
-            assert!(msg.contains("passed 2") || msg.contains("passed 2"));
         }
 
         #[test]
@@ -342,9 +446,9 @@ mod tests {
                 let err = result.unwrap_err();
                 let msg = format!("{err}");
                 assert!(
-                    msg.contains("Only 1 arguments are allowed") || msg.contains("Only 1 argument")
+                    msg.contains("`check_vec_len(bytecode)` takes 1 parameter, but 2 were given"),
+                    "{msg}"
                 );
-                assert!(msg.contains("passed 2") || msg.contains("passed 2"));
             }
         }
     }
@@ -411,7 +515,7 @@ mod tests {
             let dir = unique_tmp_dir("textforge_check_file_path_is_dir");
             fs::create_dir_all(&dir).unwrap();
 
-            // canonicalize vai funcionar, mas is_dir deve falhar
+            // canonicalize succeeds, but is_dir must fail
             let r = check_file_path(&dir, None);
             assert!(r.is_err());
 
@@ -421,7 +525,7 @@ mod tests {
         #[test]
         fn err_for_nonexistent_path_canonicalize_fails() {
             let dir = unique_tmp_dir("textforge_check_file_path_missing");
-            // não cria diretório/arquivo
+            // creates no directory or file
             let file = dir.join("missing.textforge");
 
             let r = check_file_path(&file, None);
@@ -438,14 +542,15 @@ mod tests {
         }
 
         #[test]
-        fn err_when_start_ge_end_no_text() {
-            assert!(check_chunk_bound_indexes(3, 3, None).is_err());
+        fn err_only_when_start_gt_end_no_text() {
+            // Inclusive ranges: start == end selects one item (it was an error).
+            assert!(check_chunk_bound_indexes(3, 3, None).is_ok());
             assert!(check_chunk_bound_indexes(4, 2, None).is_err());
         }
 
         #[test]
         fn ok_when_indices_in_range_with_text() {
-            // "banàna" tem 6 chars
+            // "banàna" has 6 chars
             let text = "banàna";
             assert!(check_chunk_bound_indexes(1, 4, Some(text)).is_ok());
         }
@@ -463,9 +568,9 @@ mod tests {
         }
 
         #[test]
-        fn err_when_start_ge_end_with_text() {
+        fn err_only_when_start_gt_end_with_text() {
             let text = "abcdef";
-            assert!(check_chunk_bound_indexes(2, 2, Some(text)).is_err());
+            assert!(check_chunk_bound_indexes(2, 2, Some(text)).is_ok());
             assert!(check_chunk_bound_indexes(3, 1, Some(text)).is_err());
         }
     }
@@ -519,7 +624,7 @@ mod tests {
 
         #[test]
         fn supports_unicode_words() {
-            // split_whitespace funciona bem com unicode; aqui garante que o contador não quebra
+            // split_whitespace handles Unicode; this checks the counter does not break
             assert!(check_index_against_words(1, "banàna maçã").is_ok());
             assert!(check_index_against_words(2, "banàna maçã").is_err());
         }

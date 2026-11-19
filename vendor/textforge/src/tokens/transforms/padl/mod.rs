@@ -6,14 +6,18 @@ use std::borrow::Cow;
 use crate::{
     context::execution_context::GlobalExecutionContext,
     tokens::InstructionMethods,
-    utils::{errors::TextForgeError, transforms::extend_string, validations::check_vec_len},
+    utils::{
+        errors::TextForgeError,
+        transforms::{push_padding, reserve_padding},
+        validations::check_vec_len,
+    },
 };
 
 use crate::parse_args;
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// PADL - Pad Left
+/// `padl {text} {length};` — Pad on the left with `text` up to `length` characters.
 ///
 /// Repeats `text` characters until `max_len` is reached, and then insert the result at the beggining of `input`
 ///
@@ -32,12 +36,15 @@ use crate::parser::params::TextForgeParamTypes;
 /// ```
 #[derive(Clone, Default)]
 pub struct Padl {
+    /// The text to add or insert.
     pub text: String,
+    /// Length, in characters, of the padded result.
     pub max_len: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Padl {
+    /// Builds `padl {text} {length};` with the given parameters.
     pub fn new(text: &str, max_len: usize) -> Self {
         Padl {
             text: text.to_string(),
@@ -64,8 +71,9 @@ impl InstructionMethods for Padl {
     fn transform<'a>(
         &self,
         input: Cow<'a, str>,
-        _: Option<&mut GlobalExecutionContext>,
+        context: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
+        let limits = context.map(|context| context.limits()).unwrap_or_default();
         let character_count = input.chars().count();
 
         if character_count >= self.max_len {
@@ -75,8 +83,8 @@ impl InstructionMethods for Padl {
         if self.text.is_empty() {
             return Ok(input);
         }
-        let mut output = extend_string(&self.text, ml);
-        output.reserve(input.len());
+        let mut output = reserve_padding(&self.text, ml, input.len(), "padl", &limits)?;
+        push_padding(&mut output, &self.text, ml);
         output.push_str(&input);
         Ok(output.into())
     }
@@ -84,8 +92,8 @@ impl InstructionMethods for Padl {
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
         check_vec_len(params, 2, "padl", "")?;
 
-        self.text = parse_args!(params, 0, String, "Text_to_insert should be of String type");
-        self.max_len = parse_args!(params, 1, Usize, "Index should be of usize type");
+        self.text = parse_args!(params, 0, String, "text");
+        self.max_len = parse_args!(params, 1, Usize, "length");
         self.params = vec![self.text.to_string().into(), self.max_len.into()];
 
         Ok(())

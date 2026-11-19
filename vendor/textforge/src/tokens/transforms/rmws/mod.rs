@@ -11,7 +11,7 @@ use crate::{
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// RMWS - Remove Whitespace
+/// `rmws;` — Remove all whitespace.
 ///
 /// Removes all whitespaces in `input`
 ///
@@ -22,7 +22,7 @@ use crate::parser::params::TextForgeParamTypes;
 ///
 /// let token = Rmws::default();
 ///
-/// assert_eq!(token.transform("banana laranja cheia de canja".into(),None).unwrap().to_string(), "bananalaranjacheiadecanja");
+/// assert_eq!(token.transform("banana orange full of jam".into(),None).unwrap().to_string(), "bananaorangefullofjam");
 /// ```
 ///
 #[derive(Clone, Default)]

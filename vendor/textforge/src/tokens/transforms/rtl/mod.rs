@@ -10,7 +10,7 @@ use crate::utils::validations::check_vec_len;
 
 use crate::utils::errors::TextForgeError;
 
-/// RTL - Rotate Left
+/// `rtl {times};` — Rotate the characters `times` positions to the left.
 ///
 /// Rotates `input` to the left `n` times
 ///
@@ -26,11 +26,13 @@ use crate::utils::errors::TextForgeError;
 /// ```
 #[derive(Clone, Default)]
 pub struct Rtl {
+    /// How many times to repeat or rotate.
     pub times: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Rtl {
+    /// Builds `rtl {times};` with the given parameters.
     pub fn new(times: usize) -> Rtl {
         Rtl {
             times,
@@ -82,7 +84,7 @@ impl InstructionMethods for Rtl {
 
         check_vec_len(params, 1, "rtl", "")?;
 
-        self.times = parse_args!(params, 0, Usize, "Index should be of usize type");
+        self.times = parse_args!(params, 0, Usize, "times");
         self.params = vec![self.times.into()];
 
         Ok(())

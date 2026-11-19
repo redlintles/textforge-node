@@ -11,7 +11,7 @@ use crate::{
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// JKBC - Join to Kebab Case
+/// `jkbc;` — Join the words as kebab-case.
 ///
 /// If `input` is a string whose words are separated by spaces, join `input` as a kebab-case lowercased string
 /// For conversion between the screaming and normal versions of this case style, use the tokens TLA(To Lowercase All) and TUA(To Uppercase All) together with this one.
@@ -28,7 +28,7 @@ use crate::parser::params::TextForgeParamTypes;
 ///
 /// let token = Jkbc::default();
 ///
-/// assert_eq!(token.transform("banana laranja cheia de canja".into(),None).unwrap().to_string(), "banana-laranja-cheia-de-canja");
+/// assert_eq!(token.transform("banana orange full of jam".into(),None).unwrap().to_string(), "banana-orange-full-of-jam");
 /// ```
 ///
 #[derive(Clone, Default)]

@@ -8,14 +8,11 @@ use regex::Regex;
 use crate::{
     context::execution_context::GlobalExecutionContext,
     tokens::InstructionMethods,
-    utils::{
-        errors::{TextForgeError, TextForgeErrorCode},
-        validations::check_vec_len,
-    },
+    utils::{errors::TextForgeError, validations::check_vec_len},
 };
 
 use crate::parser::params::TextForgeParamTypes;
-/// RAW - Replace All With
+/// `raw {pattern} {text};` — Replace every match of `pattern` with `text`.
 ///
 /// Replace all ocurrences of `pattern` in `input` with `text_to_replace`
 ///
@@ -38,12 +35,19 @@ use crate::parser::params::TextForgeParamTypes;
 ///
 #[derive(Clone, Debug)]
 pub struct Raw {
+    /// The regular expression to match.
     pub pattern: Regex,
+    /// The replacement text: a regex replacement template, where `$1` and
+    /// `${name}` insert capture groups and `$$` is a literal `$` (so a price
+    /// is written `$$5.00`; `$5.00` would insert group 5).
     pub text_to_replace: String,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Raw {
+    /// Builds `raw {pattern} {text};` with the given parameters.
+    ///
+    /// Fails with the regex error message if `pattern` is not a valid regular expression.
     pub fn new(pattern: &str, text_to_replace: &str) -> Result<Self, String> {
         let pattern = Regex::new(pattern).map_err(|x| x.to_string())?;
         Ok(Raw {
@@ -60,7 +64,7 @@ impl Raw {
 impl Default for Raw {
     fn default() -> Self {
         Raw {
-            pattern: Regex::new("").unwrap(),
+            pattern: crate::utils::regexes::EMPTY_RE.clone(),
             text_to_replace: "".to_string(),
             params: vec!["".to_string().into(), "".to_string().into()],
         }
@@ -103,22 +107,12 @@ impl InstructionMethods for Raw {
 
         check_vec_len(params, 2, "raw", "")?;
 
-        let pattern_payload = parse_args!(params, 0, String, "Pattern should be of string type");
+        let pattern_payload = parse_args!(params, 0, String, "pattern");
 
-        self.pattern = Regex::new(&pattern_payload).map_err(|_| {
-            TextForgeError::new(
-                TextForgeErrorCode::TextParsingError("Failed to create regex".into()),
-                "sslt",
-                pattern_payload.clone(),
-            )
-        })?;
+        self.pattern = Regex::new(&pattern_payload)
+            .map_err(|error| crate::utils::errors::regex_error("raw", &pattern_payload, error))?;
 
-        self.text_to_replace = parse_args!(
-            params,
-            1,
-            String,
-            "Text_to_replace should be of type String"
-        );
+        self.text_to_replace = parse_args!(params, 1, String, "replacement");
 
         self.params = vec![
             self.pattern.to_string().into(),

@@ -6,11 +6,12 @@ use std::borrow::Cow;
 use crate::{
     context::execution_context::GlobalExecutionContext,
     tokens::InstructionMethods,
+    utils::transforms::{push_padding, reserve_padding},
     utils::{errors::TextForgeError, validations::check_vec_len},
 };
 
 use crate::parser::params::TextForgeParamTypes;
-/// PADR - Pad Right
+/// `padr {text} {length};` — Pad on the right with `text` up to `length` characters.
 ///
 /// Repeats `text` characters until `max_len` is reached, and then insert the result at the end of `input`
 ///
@@ -29,12 +30,15 @@ use crate::parser::params::TextForgeParamTypes;
 /// ```
 #[derive(Clone, Default)]
 pub struct Padr {
+    /// The text to add or insert.
     pub text: String,
+    /// Length, in characters, of the padded result.
     pub max_len: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Padr {
+    /// Builds `padr {text} {length};` with the given parameters.
     pub fn new(text: &str, max_len: usize) -> Self {
         Padr {
             text: text.to_string(),
@@ -61,8 +65,9 @@ impl InstructionMethods for Padr {
     fn transform<'a>(
         &self,
         input: Cow<'a, str>,
-        _: Option<&mut GlobalExecutionContext>,
+        context: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
+        let limits = context.map(|context| context.limits()).unwrap_or_default();
         let character_count = input.chars().count();
 
         if character_count >= self.max_len {
@@ -72,8 +77,9 @@ impl InstructionMethods for Padr {
         if self.text.is_empty() {
             return Ok(input);
         }
-        let mut output = input.into_owned();
-        output.extend(self.text.chars().cycle().take(ml));
+        let mut output = reserve_padding(&self.text, ml, input.len(), "padr", &limits)?;
+        output.push_str(&input);
+        push_padding(&mut output, &self.text, ml);
         Ok(output.into())
     }
 
@@ -82,8 +88,8 @@ impl InstructionMethods for Padr {
 
         check_vec_len(params, 2, "padr", "")?;
 
-        self.text = parse_args!(params, 0, String, "Text_to_insert should be of String type");
-        self.max_len = parse_args!(params, 1, Usize, "Index should be of usize type");
+        self.text = parse_args!(params, 0, String, "text");
+        self.max_len = parse_args!(params, 1, Usize, "length");
         self.params = vec![self.text.to_string().into(), self.max_len.into()];
 
         Ok(())

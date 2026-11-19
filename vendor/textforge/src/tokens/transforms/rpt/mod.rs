@@ -14,7 +14,7 @@ use crate::{
 
 use crate::parser::params::TextForgeParamTypes;
 
-/// RPT - Repeat
+/// `rpt {times};` — Repeat the text `times` times.
 ///
 /// Repeats `input` n `times`
 ///
@@ -30,11 +30,13 @@ use crate::parser::params::TextForgeParamTypes;
 /// ```
 #[derive(Clone, Default)]
 pub struct Rpt {
+    /// How many times to repeat or rotate.
     pub times: usize,
     params: Vec<TextForgeParamTypes>,
 }
 
 impl Rpt {
+    /// Builds `rpt {times};` with the given parameters.
     pub fn new(times: usize) -> Self {
         Rpt {
             times,
@@ -52,8 +54,14 @@ impl InstructionMethods for Rpt {
     fn transform_buffered(
         &self,
         input: crate::api::TextBuffer,
-        _context: Option<&mut GlobalExecutionContext>,
+        context: Option<&mut GlobalExecutionContext>,
     ) -> Result<crate::api::TextBuffer, TextForgeError> {
+        // Checked first: a spooled repetition would otherwise fill the disk.
+        let limits = context.map(|context| context.limits()).unwrap_or_default();
+        limits.check_generated(
+            u128::from(input.len_bytes()).checked_mul(self.times as u128),
+            "rpt",
+        )?;
         input.repeat(self.times)
     }
 
@@ -67,26 +75,32 @@ impl InstructionMethods for Rpt {
     fn transform<'a>(
         &self,
         input: Cow<'a, str>,
-        _: Option<&mut GlobalExecutionContext>,
+        context: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
         if input.is_empty() || self.times == 0 {
             return Ok(Cow::Borrowed(""));
         }
+        let limits = context.map(|context| context.limits()).unwrap_or_default();
+        limits.check_generated((input.len() as u128).checked_mul(self.times as u128), "rpt")?;
         if self.times == 1 {
             return Ok(input);
         }
         let output_len = input.len().checked_mul(self.times).ok_or_else(|| {
             TextForgeError::new(
-                TextForgeErrorCode::ValidationError("Repeated output size overflow".into()),
-                "rpt",
-                format!("input_bytes={}, times={}", input.len(), self.times),
+                TextForgeErrorCode::ValidationError(
+                    format!("repeating the text {} times would produce more bytes than this machine can address", self.times).into(),
+                ),
+                "",
+                "",
             )
         })?;
         let reserve = |output: &mut String, additional| {
             output.try_reserve_exact(additional).map_err(|error| {
                 TextForgeError::new(
-                    TextForgeErrorCode::ValidationError("Cannot allocate repeated output".into()),
-                    "rpt",
+                    TextForgeErrorCode::ValidationError(
+                        format!("not enough memory to repeat the text {} times", self.times).into(),
+                    ),
+                    "",
                     error.to_string(),
                 )
             })
@@ -122,7 +136,7 @@ impl InstructionMethods for Rpt {
 
         check_vec_len(params, 1, "rpt", "")?;
 
-        self.times = parse_args!(params, 0, Usize, "Index should be of usize type");
+        self.times = parse_args!(params, 0, Usize, "times");
         self.params = vec![self.times.into()];
 
         Ok(())

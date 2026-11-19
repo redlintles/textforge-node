@@ -6,9 +6,9 @@ use crate::{
 };
 use std::borrow::Cow;
 
-/// REVLN — Reverse line contents while preserving terminators at their original positions.
+/// `revln;` — Reverse the order of the lines.
 ///
-/// Uses one-based indices and shared logical-line semantics. See `docs/lines.md`.
+/// Uses the shared logical-line semantics. See `docs/lines.md`.
 ///
 /// ```
 /// use textforge::tokens::{InstructionMethods, transforms::revln::Revln};
@@ -20,7 +20,7 @@ pub struct Revln {
     params: Vec<TextForgeParamTypes>,
 }
 impl Revln {
-    /// Construct `revln`. Line indices are one-based.
+    /// Construct `revln`.
     pub fn new() -> Result<Self, TextForgeError> {
         let mut token = Self::default();
         token.set_params(&[])?;
@@ -42,7 +42,9 @@ impl InstructionMethods for Revln {
         let mut parts = vec![self.get_string_repr().to_owned()];
         for parameter in &self.params {
             parts.push(match parameter {
-                TextForgeParamTypes::String(value) => shell_words::quote(value).into_owned(),
+                TextForgeParamTypes::String(value) => {
+                    crate::text::line_parser::quote(value).into_owned()
+                }
                 TextForgeParamTypes::Usize(value) => value.to_string(),
                 _ => String::new(),
             });
@@ -50,7 +52,7 @@ impl InstructionMethods for Revln {
         format!("{};\n", parts.join(" ")).into()
     }
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 0, "revln", "Invalid line instruction arity")?;
+        check_vec_len(params, 0, "revln", "")?;
 
         self.params = params.to_vec();
         Ok(())

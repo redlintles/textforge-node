@@ -1,8 +1,7 @@
-use std::borrow::Cow;
-
-use evalexpr::eval_with_context;
+use std::{borrow::Cow, sync::Arc};
 
 use crate::{
+    context::builtins::{CurrentText, VarReader, check_definable},
     context::execution_context::{
         GlobalContextMethods, GlobalExecutionContext, VarEntry, VarValues,
     },
@@ -10,11 +9,7 @@ use crate::{
     parser::params::TextForgeParamTypes,
     tokens::InstructionMethods,
     utils::{
-        errors::{
-            TextForgeError,
-            TextForgeErrorCode::{InvalidExprError, RequiredContextError},
-        },
-        expr::{build_eval_context, value_to_plain_string},
+        errors::TextForgeError, expr::value_to_plain_string, template::CompiledExpr,
         validations::check_vec_len,
     },
 };
@@ -22,12 +17,14 @@ use crate::{
 #[cfg(feature = "test_access")]
 pub mod test;
 
-/// Eval - Parses logical and
+/// `eval {expression} in {name};` — Evaluate an expression into a variable.
 #[derive(Clone, Default)]
 pub struct Eval {
     expr: String,
     target: String,
     params: Vec<TextForgeParamTypes>,
+    /// `expr` with its operator tree built when the parameters are set.
+    compiled: Option<Arc<CompiledExpr>>,
 }
 
 impl InstructionMethods for Eval {
@@ -37,6 +34,10 @@ impl InstructionMethods for Eval {
     #[cfg(feature = "bytecode")]
     fn get_opcode(&self) -> u32 {
         0x3b
+    }
+    // Bound state is immutable; only the execution context changes.
+    fn supports_preparation(&self) -> bool {
+        true
     }
     fn get_string_repr(&self) -> &'static str {
         "eval"
@@ -52,25 +53,14 @@ impl InstructionMethods for Eval {
         context: Option<&mut GlobalExecutionContext>,
     ) -> Result<Cow<'a, str>, TextForgeError> {
         let context = context.ok_or_else(|| {
-            TextForgeError::new(
-                RequiredContextError("Context required for proper working!".into()),
-                std::borrow::Cow::Borrowed("val"),
-                std::borrow::Cow::Borrowed(""),
-            )
+            crate::utils::errors::context_required("eval", "read and store variables")
         })?;
 
-        // Immutable borrow — dropped as soon as eval_ctx is built, since
-        // HashMapContext owns its own converted values rather than
-        // referencing context's HashMap.
-        let eval_ctx = build_eval_context(context.get_all_vars())?;
-
-        let result = eval_with_context(&self.expr, &eval_ctx).map_err(|e| {
-            TextForgeError::new(
-                InvalidExprError(Cow::from(e.to_string())),
-                Cow::from("eval.transform"),
-                Cow::from(self.expr.to_string()),
-            )
-        })?;
+        let reader = VarReader::new(context, CurrentText::Str(&input));
+        let result = match &self.compiled {
+            Some(compiled) => compiled.evaluate(&reader, "")?,
+            None => CompiledExpr::new(&self.expr).evaluate(&reader, "")?,
+        };
 
         match context.get_mut_var(&self.target) {
             Ok(var_mut) => {
@@ -97,10 +87,12 @@ impl InstructionMethods for Eval {
     }
 
     fn set_params(&mut self, params: &[TextForgeParamTypes]) -> Result<(), TextForgeError> {
-        check_vec_len(params, 2, "eval", "param parsing error, invalid vec len")?;
+        check_vec_len(params, 2, "eval", "")?;
 
-        self.expr = parse_args!(params, 0, String, "Expr should be of type string");
-        self.target = parse_args!(params, 1, String, " should be of type string");
+        self.expr = parse_args!(params, 0, String, "expression");
+        self.target = parse_args!(params, 1, String, "variable");
+        check_definable(&self.target, "eval")?;
+        self.compiled = Some(Arc::new(CompiledExpr::new(&self.expr)));
 
         self.params = vec![self.expr.to_string().into(), self.target.to_string().into()];
         Ok(())
@@ -108,7 +100,13 @@ impl InstructionMethods for Eval {
     #[cfg(feature = "bytecode")]
     fn to_bytecode(&self) -> Result<Vec<u8>, TextForgeError> {
         use crate::to_bytecode;
-        let result = to_bytecode!(self.get_opcode(), []);
+        let result = to_bytecode!(
+            self.get_opcode(),
+            [
+                TextForgeParamTypes::String(self.expr.clone()),
+                TextForgeParamTypes::String(self.target.clone()),
+            ]
+        );
         Ok(result)
     }
 }
