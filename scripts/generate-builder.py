@@ -45,25 +45,28 @@ trait=api.split('pub trait TextForgeConditionalMethods')[0]
 for m in re.finditer(r'(?ms)^    fn (\w+)\(([^;]*?)\) -> Result<&mut Self, TextForgeError> \{\n(.*?)^    }',trait):
     name,signature,implementation=m.groups()
     token=re.search(r'Box::new\((\w+)::',implementation)[1]
-    parameters=re.findall(r'(\w+): impl Into<ValType>',signature)
+    parameters=re.findall(r'(\w+): impl Into<(ValType|TokenWrapper)>',signature)
     kinds=syntax[token]
-    if len(parameters)!=len(kinds): raise ValueError(name)
+    if len(parameters)!=len(kinds) or any(target=='TokenWrapper' and kind!='Token' for (_,target),kind in zip(parameters,kinds)):
+        raise ValueError(name)
     typed=[];values=[]
-    for param,kind in zip(parameters,kinds,strict=True):
+    for (param,target),kind in zip(parameters,kinds,strict=True):
         annotation,converter={'String':('TextArgument','textArg'),'Usize':('NumberArgument','numberArg'),'Token':('InstructionArgument','instructionArg')}[kind]
+        # Rust `impl Into<TokenWrapper>` takes an instruction value, never a variable reference.
+        if target=='TokenWrapper': annotation,converter='Instruction | Pipeline','tokenArg'
         if name == 'normalize_unicode' and param == 'mode': annotation = 'NormalizationMode | Variable'
         if name in {'val','var','mut_var'} and param=='var_value': annotation,converter='ValueArgument','valueArg'
         typed.append(f'{camel(param)}: {annotation}')
         values.append(f'{converter}({camel(param)})')
     args=', '.join([repr(token),*values])
     methods.append(f'  /** Mirrors Rust `TextForgeBuilderMethods::{name}` through `{token}`. */\n  {camel(name)}({", ".join(typed)}): Pipeline {{ return this.add({args}); }}\n')
-    mapping.append({'rust':name,'javascript':camel(name),'mnemonic':token,'parameters':list(zip(parameters,kinds))})
+    mapping.append({'rust':name,'javascript':camel(name),'mnemonic':token,'parameters':[[param,kind] for (param,_),kind in zip(parameters,kinds)]})
 mapping.append({'rust':'define_replace_map','javascript':'defineReplaceMap','portable':'PipelinePlan::define_replace_map','parameters':[['name','String'],['configure','ReplaceMapBody']]})
 if len(mapping)<70: raise ValueError('Unexpected builder shape')
 output=ROOT/'ts/index.ts'
 current=output.read_text();begin='  // BEGIN GENERATED BUILDER METHODS\n';end='  // END GENERATED BUILDER METHODS\n'
 prefix,rest=current.split(begin);_,suffix=rest.split(end)
-files={ROOT/'ts/options.ts':option_types, output:prefix+begin+''.join(methods)+end+suffix, ROOT/'docs/builder-parity.json':json.dumps({'coreVersion':'0.2.0','apiSha256':hashlib.sha256(api.encode()).hexdigest(),'registrySha256':hashlib.sha256(registry.encode()).hexdigest(),'methods':mapping},indent=2)+'\n'}
+files={ROOT/'ts/options.ts':option_types, output:prefix+begin+''.join(methods)+end+suffix, ROOT/'docs/builder-parity.json':json.dumps({'coreVersion':re.search(r'(?m)^version = "([^"]+)"',(CORE/'Cargo.toml').read_text())[1],'apiSha256':hashlib.sha256(api.encode()).hexdigest(),'registrySha256':hashlib.sha256(registry.encode()).hexdigest(),'methods':mapping},indent=2)+'\n'}
 for path,content in files.items():
     if '--check' in sys.argv:
         if path.read_text()!=content: raise SystemExit(f'Stale generated file: {path}')

@@ -90,7 +90,12 @@ export class Variable {
 }
 export function getVar(name: string): Variable { return new Variable(name); }
 export type TextArgument = string | Variable;
-export type NumberArgument = Integer | Variable;
+/**
+ * A numeric parameter: an unsigned integer, a variable, or (since TextForge 0.3.0)
+ * text holding a `[[ ]]` expression or `{{ }}` template that the engine resolves when
+ * the instruction runs, such as `'[[__LINES__ - 1]]'`.
+ */
+export type NumberArgument = Integer | Variable | string;
 export type ValueArgument = TextArgument | Integer;
 export type InstructionArgument = Instruction | Pipeline | Variable;
 export type Argument = ValueArgument | Instruction;
@@ -143,6 +148,7 @@ function textArg(value: TextArgument): TextArgument {
 }
 function numberArg(value: NumberArgument): NumberArgument {
   if (value instanceof Variable) return value;
+  if (typeof value === 'string') return text(value);
   integer(value); return value;
 }
 /** Rust `val`, `var` and `mut_var` store literal numbers as their decimal text. */
@@ -153,6 +159,12 @@ function instructionArg(value: InstructionArgument): Instruction | Variable {
   if (value instanceof Pipeline) return value.asInstruction();
   if (value instanceof Instruction || value instanceof Variable) return value;
   throw new TypeError('expected a single-instruction Pipeline, Instruction or Variable');
+}
+/** Rust `impl Into<TokenWrapper>`: an instruction value, never a variable reference. */
+function tokenArg(value: Instruction | Pipeline): Instruction {
+  if (value instanceof Pipeline) return value.asInstruction();
+  if (value instanceof Instruction) return value;
+  throw new TypeError('expected an Instruction or a single-instruction Pipeline');
 }
 type ReplaceRule = readonly [TextArgument, TextArgument];
 type ReplaceMapDefinition = Readonly<{kind:'replaceMap'; name:TextArgument; rules:readonly ReplaceRule[]}>;
@@ -421,6 +433,24 @@ export class Pipeline {
   eval(expr: TextArgument, varName: TextArgument): Pipeline { return this.add('eval', textArg(expr), textArg(varName)); }
   /** Mirrors Rust `TextForgeBuilderMethods::iter` through `iter`. */
   iter(times: NumberArgument, inner: InstructionArgument): Pipeline { return this.add('iter', numberArg(times), instructionArg(inner)); }
+  /** Mirrors Rust `TextForgeBuilderMethods::on_line` through `onln`. */
+  onLine(line: NumberArgument, inner: Instruction | Pipeline): Pipeline { return this.add('onln', numberArg(line), tokenArg(inner)); }
+  /** Mirrors Rust `TextForgeBuilderMethods::on_chunk` through `onck`. */
+  onChunk(startIndex: NumberArgument, endIndex: NumberArgument, inner: Instruction | Pipeline): Pipeline { return this.add('onck', numberArg(startIndex), numberArg(endIndex), tokenArg(inner)); }
+  /** Mirrors Rust `TextForgeBuilderMethods::on_line_interval` through `onlni`. */
+  onLineInterval(startLine: NumberArgument, endLine: NumberArgument, inner: Instruction | Pipeline): Pipeline { return this.add('onlni', numberArg(startLine), numberArg(endLine), tokenArg(inner)); }
+  /** Mirrors Rust `TextForgeBuilderMethods::try_ignore` through `tryi`. */
+  tryIgnore(inner: Instruction | Pipeline): Pipeline { return this.add('tryi', tokenArg(inner)); }
+  /** Mirrors Rust `TextForgeBuilderMethods::pipeline_join` through `ppjn`. */
+  pipelineJoin(path: TextArgument): Pipeline { return this.add('ppjn', textArg(path)); }
+  /** Mirrors Rust `TextForgeBuilderMethods::write_to_file` through `wtf`. */
+  writeToFile(path: TextArgument): Pipeline { return this.add('wtf', textArg(path)); }
+  /** Mirrors Rust `TextForgeBuilderMethods::append_file` through `apf`. */
+  appendFile(path: TextArgument): Pipeline { return this.add('apf', textArg(path)); }
+  /** Mirrors Rust `TextForgeBuilderMethods::prepend_file` through `ppf`. */
+  prependFile(path: TextArgument): Pipeline { return this.add('ppf', textArg(path)); }
+  /** Mirrors Rust `TextForgeBuilderMethods::insert_file` through `inf`. */
+  insertFile(index: NumberArgument, path: TextArgument): Pipeline { return this.add('inf', numberArg(index), textArg(path)); }
   /** Mirrors Rust `TextForgeBuilderMethods::remove_pattern` through `rmp`. */
   removePattern(pattern: TextArgument): Pipeline { return this.add('rmp', textArg(pattern)); }
   /** Mirrors Rust `TextForgeBuilderMethods::end` through `end`. */

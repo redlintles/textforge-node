@@ -37,7 +37,8 @@ test('Unicode, combining marks, NUL, empty input and strict boundary conversions
   for (const input of ['', 'é🍌', 'e\u0301', 'a\0b']) assert.equal(new Pipeline().compile().process(input),input);
   for (const value of [-1,1.5,NaN,Infinity,Number.MAX_SAFE_INTEGER+1,-1n,1n<<64n])
     assert.throws(() => new Pipeline().repeat(value),RangeError);
-  for (const value of [true,null,'2',{}]) assert.throws(() => new Pipeline().repeat(value as number));
+  for (const value of [true,null,{}]) assert.throws(() => new Pipeline().repeat(value as number));
+  assert.throws(() => new Pipeline().repeat('\ud800'),TypeError);
   assert.throws(() => new Pipeline().addToBeginning('\ud800'),TypeError);
   assert.throws(() => new Pipeline().compile().process('\udc00'),TypeError);
   assert.throws(() => FilePath.fromText('\ud800'),TypeError);

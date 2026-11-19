@@ -1,7 +1,7 @@
 {
-  "coreVersion": "0.2.0",
-  "apiSha256": "556a68c7d6c5081cf51bb08e3296211a31830e3dc3521028ef87181b44a0f43b",
-  "registrySha256": "ad1b705b07a1910150104f792fab983865ae6cc871df1efe37b40efb822c7d0a",
+  "coreVersion": "0.4.0",
+  "apiSha256": "146953efbf3410d5353897a05bb61782320135c9816b4434828ef010475df724",
+  "registrySha256": "c4f8c832a4f256177243b74b9279a59983fccbe702aaf7b0be32464f3654234a",
   "methods": [
     {
       "rust": "normalize_unicode",
@@ -811,6 +811,129 @@
         [
           "inner",
           "Token"
+        ]
+      ]
+    },
+    {
+      "rust": "on_line",
+      "javascript": "onLine",
+      "mnemonic": "onln",
+      "parameters": [
+        [
+          "line",
+          "Usize"
+        ],
+        [
+          "inner",
+          "Token"
+        ]
+      ]
+    },
+    {
+      "rust": "on_chunk",
+      "javascript": "onChunk",
+      "mnemonic": "onck",
+      "parameters": [
+        [
+          "start_index",
+          "Usize"
+        ],
+        [
+          "end_index",
+          "Usize"
+        ],
+        [
+          "inner",
+          "Token"
+        ]
+      ]
+    },
+    {
+      "rust": "on_line_interval",
+      "javascript": "onLineInterval",
+      "mnemonic": "onlni",
+      "parameters": [
+        [
+          "start_line",
+          "Usize"
+        ],
+        [
+          "end_line",
+          "Usize"
+        ],
+        [
+          "inner",
+          "Token"
+        ]
+      ]
+    },
+    {
+      "rust": "try_ignore",
+      "javascript": "tryIgnore",
+      "mnemonic": "tryi",
+      "parameters": [
+        [
+          "inner",
+          "Token"
+        ]
+      ]
+    },
+    {
+      "rust": "pipeline_join",
+      "javascript": "pipelineJoin",
+      "mnemonic": "ppjn",
+      "parameters": [
+        [
+          "path",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "write_to_file",
+      "javascript": "writeToFile",
+      "mnemonic": "wtf",
+      "parameters": [
+        [
+          "path",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "append_file",
+      "javascript": "appendFile",
+      "mnemonic": "apf",
+      "parameters": [
+        [
+          "path",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "prepend_file",
+      "javascript": "prependFile",
+      "mnemonic": "ppf",
+      "parameters": [
+        [
+          "path",
+          "String"
+        ]
+      ]
+    },
+    {
+      "rust": "insert_file",
+      "javascript": "insertFile",
+      "mnemonic": "inf",
+      "parameters": [
+        [
+          "index",
+          "Usize"
+        ],
+        [
+          "path",
+          "String"
         ]
       ]
     },
