@@ -1,1 +1,1 @@
-{"compilerOptions":{"target":"ES2022","module":"NodeNext","moduleResolution":"NodeNext","strict":true,"declaration":true,"outDir":"dist/esm","rootDir":"ts","noUncheckedIndexedAccess":true,"esModuleInterop":true},"include":["ts/**/*.ts","ts/**/*.cts"]}
+{"compilerOptions":{"target":"ES2022","module":"NodeNext","moduleResolution":"NodeNext","strict":true,"declaration":true,"outDir":"dist/esm","rootDir":"ts","noUncheckedIndexedAccess":true,"esModuleInterop":true,"lib":["ES2022","ES2024.String"]},"include":["ts/**/*.ts","ts/**/*.cts"]}

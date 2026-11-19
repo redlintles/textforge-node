@@ -17,10 +17,14 @@ function integer(value: Integer): bigint {
   if (value < 0n || value > 0xffffffffffffffffn) throw new RangeError('expected an unsigned 64-bit integer');
   return value;
 }
-/** Reject unpaired UTF-16 surrogates instead of silently replacing them at N-API. */
+/**
+ * Reject unpaired UTF-16 surrogates instead of silently replacing them at N-API.
+ * `isWellFormed` (ES2024, Node.js 20+) checks exactly that, about 14 times faster
+ * than the equivalent regular expression on large inputs (docs/benchmarks.md).
+ */
 function text(value: string): string {
   if (typeof value !== 'string') throw new TypeError('expected string');
-  if (/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value))
+  if (!value.isWellFormed())
     throw new TypeError('unpaired UTF-16 surrogate; use FilePath.fromWindowsWide for native paths');
   return value;
 }

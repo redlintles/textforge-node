@@ -40,6 +40,9 @@ test('Unicode, combining marks, NUL, empty input and strict boundary conversions
   for (const value of [true,null,{}]) assert.throws(() => new Pipeline().repeat(value as number));
   assert.throws(() => new Pipeline().repeat('\ud800'),TypeError);
   assert.throws(() => new Pipeline().addToBeginning('\ud800'),TypeError);
+  for (const value of ['a\udc00b','x\ud83c','\udc00\ud800'])
+    assert.throws(() => new Pipeline().compile().process(value),TypeError);
+  assert.equal(new Pipeline().compile().process('\ud83c\udf4c'),'🍌');
   assert.throws(() => new Pipeline().compile().process('\udc00'),TypeError);
   assert.throws(() => FilePath.fromText('\ud800'),TypeError);
   assert.doesNotThrow(() => new Pipeline().repeat(0xffffffffffffffffn));
