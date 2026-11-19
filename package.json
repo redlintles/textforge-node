@@ -41,7 +41,8 @@
     "check:generated": "python3 scripts/generate-builder.py --check",
     "check:reference": "python3 scripts/generate-reference.py --check",
     "test:distribution": "node scripts/check-distribution.mjs",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "benchmark": "node scripts/benchmark.mjs"
   },
   "napi": {
     "binaryName": "textforge_node"
