@@ -246,6 +246,45 @@ export interface ErrorData {
   message: string
   instruction: string
   input: string
+  details: ErrorDetails
+}
+
+/**
+ * Owned copy of the portable `BindingErrorDetails` (core 0.4.0).
+ *
+ * ```
+ * use textforge::api::portable::{InstructionSpec, PipelinePlan};
+ * let error = PipelinePlan::new().add(InstructionSpec::new("unknown".into(), vec![])).unwrap_err();
+ * assert_eq!(error.details.kind, "TokenNotFound");
+ * ```
+ */
+export interface ErrorDetails {
+  kind: string
+  trace: Array<TraceFrame>
+  parameters: Array<ErrorParameter>
+  cause: string | null
+  hint: string | null
+  ignorable: boolean
+  report: string
+}
+
+/**
+ * One parameter of the instruction that failed (`TextForgeError.parameters`),
+ * with the value it ran with and, when different, how it was written.
+ *
+ * ```
+ * use textforge::api::portable::{Argument, InstructionSpec, PipelinePlan};
+ * let mut plan = PipelinePlan::new();
+ * plan.add(InstructionSpec::new("dls".into(), vec![Argument::Number(9)]))?;
+ * let error = plan.compile()?.process("abc").unwrap_err();
+ * assert_eq!(error.details.parameters[0].name, "index");
+ * # Ok::<(), textforge::api::portable::BindingError>(())
+ * ```
+ */
+export interface ErrorParameter {
+  name: string
+  value: string
+  written: string | null
 }
 
 export declare function features(): Features
@@ -333,4 +372,23 @@ export interface Observation {
   before: string
   after?: string
   instruction: string
+}
+
+/**
+ * One instruction an error left, outermost first (`TextForgeError.trace`).
+ * JavaScript: `error.trace.at(-1).instruction` is the instruction that failed.
+ *
+ * ```
+ * use textforge::api::portable::{Argument, InstructionSpec, PipelinePlan};
+ * let mut plan = PipelinePlan::new();
+ * plan.add(InstructionSpec::new("dls".into(), vec![Argument::Number(9)]))?;
+ * let error = plan.compile()?.process("abc").unwrap_err();
+ * assert_eq!(error.details.trace.last().map(|f| f.instruction.as_str()), Some("dls 9;"));
+ * # Ok::<(), textforge::api::portable::BindingError>(())
+ * ```
+ */
+export interface TraceFrame {
+  instruction: string
+  location: string | null
+  note: string | null
 }

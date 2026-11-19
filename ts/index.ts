@@ -25,15 +25,59 @@ function text(value: string): string {
   return value;
 }
 export type ErrorStage = 'conversion' | 'validation' | 'execution' | 'persistence' | 'callback';
-/** Portable diagnostic fields are preserved verbatim. */
+/** One instruction an error left, outermost first; the last frame is the instruction that failed. */
+export interface TraceFrame {
+  /** The instruction as it ran (the failing one) or as it was written (its containers). */
+  readonly instruction: string;
+  /** `file:line` when the pipeline came from a file. */
+  readonly location: string | null;
+  /** What the container was doing, such as the iteration or the block step. */
+  readonly note: string | null;
+}
+/** One parameter of the instruction that failed. */
+export interface ErrorParameter {
+  readonly name: string;
+  /** The value the instruction ran with. */
+  readonly value: string;
+  /** How it was written, when that differs (an expression or a template). */
+  readonly written: string | null;
+}
+/** Fields every portable error carries; `TextForgeError` exposes them verbatim. */
+export interface TextForgeErrorData {
+  stage: string; code: number; message: string; instruction: string; input: string;
+  details: {
+    kind: string; trace: readonly TraceFrame[]; parameters: readonly ErrorParameter[];
+    cause?: string | null; hint?: string | null; ignorable: boolean; report: string;
+  };
+}
+/**
+ * Portable diagnostic fields are preserved verbatim. Since TextForge 0.4.0 an error
+ * also carries its stable `kind`, the `trace` and `parameters` of a failed run, the
+ * lower-level `cause`, a `hint`, whether `tryIgnore` would ignore it, and the plain
+ * `report` the `txf` program prints. Read the fields; the report layout may change.
+ */
 export class TextForgeError extends Error {
   readonly stage: ErrorStage;
   readonly code: number;
   readonly instruction: string;
   readonly input: string;
-  constructor(data: {stage: string; code: number; message: string; instruction: string; input: string}) {
+  /** Stable name of the code, such as `IndexOutOfRange`. */
+  readonly kind: string;
+  readonly trace: readonly TraceFrame[];
+  readonly parameters: readonly ErrorParameter[];
+  readonly cause: string | null;
+  readonly hint: string | null;
+  /** Whether `tryIgnore` would ignore this error (safety limits are never ignored). */
+  readonly ignorable: boolean;
+  /** The full uncolored report, as `txf` prints it. */
+  readonly report: string;
+  constructor(data: TextForgeErrorData) {
     super(data.message); this.name = 'TextForgeError'; this.stage = data.stage as ErrorStage;
     this.code = data.code; this.instruction = data.instruction; this.input = data.input;
+    const details = data.details;
+    this.kind = details.kind; this.trace = details.trace; this.parameters = details.parameters;
+    this.cause = details.cause ?? null; this.hint = details.hint ?? null;
+    this.ignorable = details.ignorable; this.report = details.report;
   }
   static [Symbol.hasInstance](value: unknown): boolean {
     return value instanceof Error && value.name === 'TextForgeError' && 'stage' in value && 'code' in value;

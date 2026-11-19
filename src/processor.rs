@@ -14,6 +14,7 @@ pub struct ErrorData {
     pub message: String,
     pub instruction: String,
     pub input: String,
+    pub details: ErrorDetails,
 }
 use crate::buffers::{BufferOptions, PortableBuffer};
 use crate::paths::{BatchPool, FilePath};
@@ -75,11 +76,12 @@ fn batch_result(
         }),
         Err(e) => {
             let object = ErrorData {
-                stage: format!("{:?}", e.stage).to_lowercase(),
+                stage: stage(e.stage),
                 code: u32::from(e.code),
                 message: e.message,
                 instruction: e.instruction,
                 input: e.input,
+                details: ErrorDetails::from(*e.details),
             };
             Ok(BatchResult {
                 error: Some(object),

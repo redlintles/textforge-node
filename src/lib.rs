@@ -19,15 +19,107 @@ fn error(env: Env, e: p::BindingError) -> napi::Error {
     let decorated = (|| -> Result<napi::Error> {
         let mut object = env.create_error(napi::Error::from_reason(e.message.clone()))?;
         object.set_named_property("name", "TextForgeError")?;
-        object.set_named_property("stage", format!("{:?}", e.stage).to_lowercase())?;
+        object.set_named_property("stage", stage(e.stage))?;
         object.set_named_property("code", u32::from(e.code))?;
         object.set_named_property("instruction", e.instruction.clone())?;
         object.set_named_property("input", e.input.clone())?;
+        let details = ErrorDetails::from(*e.details);
+        object.set_named_property("kind", details.kind)?;
+        object.set_named_property("trace", details.trace)?;
+        object.set_named_property("parameters", details.parameters)?;
+        object.set_named_property("cause", details.cause)?;
+        object.set_named_property("hint", details.hint)?;
+        object.set_named_property("ignorable", details.ignorable)?;
+        object.set_named_property("report", details.report)?;
         Ok(napi::Error::from(object.into_unknown(&env)?))
     })();
     match decorated {
         Ok(e) => e,
         Err(e) => e,
+    }
+}
+fn stage(stage: p::ErrorStage) -> String {
+    format!("{stage:?}").to_lowercase()
+}
+
+/// One instruction an error left, outermost first (`TextForgeError.trace`).
+/// JavaScript: `error.trace.at(-1).instruction` is the instruction that failed.
+///
+/// ```
+/// use textforge::api::portable::{Argument, InstructionSpec, PipelinePlan};
+/// let mut plan = PipelinePlan::new();
+/// plan.add(InstructionSpec::new("dls".into(), vec![Argument::Number(9)]))?;
+/// let error = plan.compile()?.process("abc").unwrap_err();
+/// assert_eq!(error.details.trace.last().map(|f| f.instruction.as_str()), Some("dls 9;"));
+/// # Ok::<(), textforge::api::portable::BindingError>(())
+/// ```
+#[napi(object, use_nullable = true)]
+pub struct TraceFrame {
+    pub instruction: String,
+    pub location: Option<String>,
+    pub note: Option<String>,
+}
+/// One parameter of the instruction that failed (`TextForgeError.parameters`),
+/// with the value it ran with and, when different, how it was written.
+///
+/// ```
+/// use textforge::api::portable::{Argument, InstructionSpec, PipelinePlan};
+/// let mut plan = PipelinePlan::new();
+/// plan.add(InstructionSpec::new("dls".into(), vec![Argument::Number(9)]))?;
+/// let error = plan.compile()?.process("abc").unwrap_err();
+/// assert_eq!(error.details.parameters[0].name, "index");
+/// # Ok::<(), textforge::api::portable::BindingError>(())
+/// ```
+#[napi(object, use_nullable = true)]
+pub struct ErrorParameter {
+    pub name: String,
+    pub value: String,
+    pub written: Option<String>,
+}
+/// Owned copy of the portable `BindingErrorDetails` (core 0.4.0).
+///
+/// ```
+/// use textforge::api::portable::{InstructionSpec, PipelinePlan};
+/// let error = PipelinePlan::new().add(InstructionSpec::new("unknown".into(), vec![])).unwrap_err();
+/// assert_eq!(error.details.kind, "TokenNotFound");
+/// ```
+#[napi(object, use_nullable = true)]
+pub struct ErrorDetails {
+    pub kind: String,
+    pub trace: Vec<TraceFrame>,
+    pub parameters: Vec<ErrorParameter>,
+    pub cause: Option<String>,
+    pub hint: Option<String>,
+    pub ignorable: bool,
+    pub report: String,
+}
+impl From<p::BindingErrorDetails> for ErrorDetails {
+    fn from(details: p::BindingErrorDetails) -> Self {
+        Self {
+            kind: details.kind,
+            trace: details
+                .trace
+                .into_iter()
+                .map(|frame| TraceFrame {
+                    instruction: frame.instruction,
+                    location: frame.location,
+                    note: frame.note,
+                })
+                .collect(),
+            parameters: details
+                .parameters
+                .into_iter()
+                .map(|parameter| ErrorParameter {
+                    name: parameter.name,
+                    value: parameter.value,
+                    written: parameter.written,
+                })
+                .collect(),
+            cause: details.cause,
+            hint: details.hint,
+            ignorable: details.ignorable,
+            report: details.report,
+        }
     }
 }
 fn number(value: BigInt) -> Result<u64> {
